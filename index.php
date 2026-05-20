@@ -132,9 +132,9 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
     <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body class="bg-body-tertiary">
-<div class="container py-4 py-lg-5">
+<div class="container-fluid px-3 px-lg-4 py-4 py-lg-5">
     <div class="row justify-content-center">
-        <div class="col-12 col-xl-10">
+        <div class="col-12">
             <?php if ($message !== ''): ?>
                 <div class="alert <?= $messageType === 'error' ? 'alert-danger' : 'alert-success' ?>" role="alert">
                     <?= escape($message) ?>
@@ -142,7 +142,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
             <?php endif; ?>
 
             <div class="row g-4 align-items-start">
-                <div class="col-12 col-lg-4">
+                <div class="col-12 col-lg-4 col-xl-3">
                     <div class="card shadow-sm h-100">
                         <div class="card-body p-4">
                             <h2 class="h5 mb-1">Add lead</h2>
@@ -204,7 +204,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                     </div>
                 </div>
 
-                <div class="col-12 col-lg-8">
+                <div class="col-12 col-lg-8 col-xl-9">
                     <div class="card shadow-sm">
                         <div class="card-body p-4">
                             <div class="d-flex flex-column flex-md-row justify-content-md-between gap-3 mb-3">
