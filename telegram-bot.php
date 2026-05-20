@@ -161,7 +161,7 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
 
             $leadId = contact_trace_add_lead($pdo, $input);
 
-            return 'Lead saved with ID #' . $leadId;
+            return contact_trace_telegram_add_success_text($leadId, (string) $input['phone_display']);
         }
 
         $firstField = contact_trace_telegram_add_first_field();
@@ -234,15 +234,22 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
 function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, array $draft, string $text): string
 {
     $fieldDefinitions = contact_trace_telegram_add_field_definitions();
-    $currentField = contact_trace_normalize_telegram_add_field((string) ($draft['current_field'] ?? ''));
+    $currentField = (string) ($draft['current_field'] ?? '');
+    $payload = is_array($draft['payload'] ?? null) ? $draft['payload'] : [];
 
     if (!isset($fieldDefinitions[$currentField])) {
+        if (($payload['phone_display'] ?? '') !== '' && ($payload['ad_url'] ?? '') !== '') {
+            contact_trace_delete_telegram_add_draft($pdo, $chatId);
+            $leadId = contact_trace_add_lead($pdo, $payload);
+
+            return contact_trace_telegram_add_success_text($leadId, (string) $payload['phone_display']);
+        }
+
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
 
         return 'Add state expired. Send /add to start again.';
     }
 
-    $payload = is_array($draft['payload'] ?? null) ? $draft['payload'] : [];
     [$value, $error] = contact_trace_telegram_add_normalize_answer($currentField, $text, $fieldDefinitions[$currentField]);
 
     if ($error !== null) {
@@ -261,16 +268,7 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     contact_trace_delete_telegram_add_draft($pdo, $chatId);
     $leadId = contact_trace_add_lead($pdo, $payload);
 
-    return 'Lead saved with ID #' . $leadId;
-}
-
-function contact_trace_normalize_telegram_add_field(string $field): string
-{
-    if ($field === 'telegram_handle') {
-        return 'service_offer';
-    }
-
-    return $field;
+    return contact_trace_telegram_add_success_text($leadId, (string) $payload['phone_display']);
 }
 
 function contact_trace_parse_add_command(string $payload): array
@@ -309,31 +307,15 @@ function contact_trace_telegram_add_field_definitions(): array
 {
     return [
         'phone_display' => [
-            'prompt' => '1/7 Send the phone number.',
+            'prompt' => '1/3 Send the contact number.',
             'required' => true,
         ],
         'ad_url' => [
-            'prompt' => '2/7 Send the ad URL.',
+            'prompt' => '2/3 Send the ad URL.',
             'required' => true,
         ],
         'owner_name' => [
-            'prompt' => '3/7 Send the owner name, or /skip.',
-            'required' => false,
-        ],
-        'service_offer' => [
-            'prompt' => '4/7 Send the service offered, or /skip.',
-            'required' => false,
-        ],
-        'latest_reply' => [
-            'prompt' => '5/7 Send the latest reply, or /skip.',
-            'required' => false,
-        ],
-        'notes' => [
-            'prompt' => '6/7 Send notes, or /skip.',
-            'required' => false,
-        ],
-        'status' => [
-            'prompt' => '7/7 Send the status (`new`, `contacted`, `replied`, `follow-up`, `closed`), or /skip for `contacted`.',
+            'prompt' => '3/3 Send the owner name, or /skip.',
             'required' => false,
         ],
     ];
@@ -414,6 +396,35 @@ function contact_trace_telegram_add_normalize_answer(string $field, string $text
     return [$value, null];
 }
 
+function contact_trace_telegram_add_success_text(int $leadId, string $phoneDisplay): string
+{
+    $lines = ['Lead saved with ID #' . $leadId];
+    $whatsAppLink = contact_trace_telegram_whatsapp_link($phoneDisplay);
+
+    if ($whatsAppLink !== '') {
+        $lines[] = 'WhatsApp: ' . $whatsAppLink;
+    }
+
+    return implode("\n", $lines);
+}
+
+function contact_trace_telegram_whatsapp_link(string $phone): string
+{
+    $digits = contact_trace_normalize_phone($phone);
+
+    if ($digits === '') {
+        return '';
+    }
+
+    if (str_starts_with($digits, '00')) {
+        $digits = substr($digits, 2);
+    } elseif (str_starts_with($digits, '0')) {
+        $digits = '6' . $digits;
+    }
+
+    return 'https://wa.me/' . rawurlencode($digits);
+}
+
 function contact_trace_format_telegram_lead(array $lead): string
 {
     $title = '#' . (int) $lead['id'] . ' ' . ($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']);
@@ -460,10 +471,10 @@ function contact_trace_help_text(): string
         '/delete 12',
         '/add',
         '/cancel',
-        '/add phone | ad_url | owner | telegram | service | latest reply | notes | status',
+        '/add phone | ad_url | owner',
         '',
         'Use /add for step-by-step entry.',
-        'Use - or /skip for empty optional fields.',
+        'Use - or /skip for the optional owner name.',
     ]);
 }
 
@@ -475,10 +486,10 @@ function contact_trace_add_usage_text(): string
         'Starts step-by-step entry in Telegram.',
         '',
         'Or send everything in one line:',
-        '/add 012-3456789 | https://example.com/ad | Ali | @ali_owner | Aircond service | Interested | Call again Friday | contacted',
+        '/add 012-3456789 | https://example.com/ad | Ali',
         '',
-        'Only phone and ad URL are required.',
-        'Optional order: owner | telegram | service | latest reply | notes | status',
-        'Use - or /skip for any empty optional value.',
+        'Phone number and ad URL are required.',
+        'Owner name is optional.',
+        'Use - or /skip for the owner name if you want to leave it empty.',
     ]);
 }
