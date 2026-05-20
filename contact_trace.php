@@ -62,7 +62,6 @@ function contact_trace_manageable_settings(): array
     return [
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_ALLOWED_CHAT_IDS',
-        'TELEGRAM_WEBHOOK_SECRET',
         'APP_PUBLIC_URL',
     ];
 }
@@ -421,7 +420,7 @@ function contact_trace_telegram_api_request(string $botToken, string $method, ar
     return is_array($result) ? $result : [];
 }
 
-function contact_trace_register_telegram_webhook(string $botToken, string $webhookUrl, string $secretToken = ''): array
+function contact_trace_register_telegram_webhook(string $botToken, string $webhookUrl): array
 {
     $cleanUrl = trim($webhookUrl);
 
@@ -433,13 +432,7 @@ function contact_trace_register_telegram_webhook(string $botToken, string $webho
         throw new InvalidArgumentException('Please enter a valid webhook URL.');
     }
 
-    $payload = ['url' => $cleanUrl];
-
-    if ($secretToken !== '') {
-        $payload['secret_token'] = $secretToken;
-    }
-
-    return contact_trace_telegram_api_request($botToken, 'setWebhook', $payload);
+    return contact_trace_telegram_api_request($botToken, 'setWebhook', ['url' => $cleanUrl]);
 }
 
 function contact_trace_get_telegram_webhook_info(string $botToken): array

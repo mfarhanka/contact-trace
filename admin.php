@@ -6,7 +6,6 @@ require __DIR__ . DIRECTORY_SEPARATOR . 'contact_trace.php';
 $message = '';
 $messageType = 'success';
 $telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
-$telegramWebhookSecret = contact_trace_env('TELEGRAM_WEBHOOK_SECRET');
 $telegramAllowedChatIds = contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS');
 $publicBaseUrl = contact_trace_env('APP_PUBLIC_URL');
 
@@ -103,11 +102,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'save_telegram_settings' || $action === 'save_and_register_telegram_webhook') {
         $submittedToken = trim((string) ($_POST['telegram_bot_token'] ?? ''));
-        $submittedSecret = trim((string) ($_POST['telegram_webhook_secret'] ?? ''));
         $settings = [
             'TELEGRAM_BOT_TOKEN' => $submittedToken !== '' ? $submittedToken : $telegramBotToken,
             'TELEGRAM_ALLOWED_CHAT_IDS' => trim((string) ($_POST['telegram_allowed_chat_ids'] ?? '')),
-            'TELEGRAM_WEBHOOK_SECRET' => $submittedSecret !== '' ? $submittedSecret : $telegramWebhookSecret,
             'APP_PUBLIC_URL' => trim((string) ($_POST['app_public_url'] ?? '')),
         ];
 
@@ -116,11 +113,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
             if ($action === 'save_and_register_telegram_webhook') {
                 $webhookUrl = trim((string) ($_POST['webhook_url'] ?? ''));
-                contact_trace_register_telegram_webhook(
-                    $settings['TELEGRAM_BOT_TOKEN'],
-                    $webhookUrl,
-                    $settings['TELEGRAM_WEBHOOK_SECRET']
-                );
+                contact_trace_register_telegram_webhook($settings['TELEGRAM_BOT_TOKEN'], $webhookUrl);
 
                 redirect_with_feedback('Telegram settings saved and webhook registered: ' . $webhookUrl, 'success');
             }
@@ -147,7 +140,6 @@ $telegramBotReady = $telegramBotToken !== '';
 $isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(current_request_host(), 'localhost') === false && current_request_host() !== '127.0.0.1';
 $isSuggestedWebhookPublic = $publicBaseUrl !== '' || $isSuggestedWebhookPublic;
 $maskedBotToken = mask_secret($telegramBotToken);
-$maskedWebhookSecret = mask_secret($telegramWebhookSecret);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -197,7 +189,6 @@ $maskedWebhookSecret = mask_secret($telegramWebhookSecret);
                         <div class="small text-secondary">
                             <div>Bot token: <?= escape($maskedBotToken) ?></div>
                             <div>Allowed chat IDs: <?= escape($telegramAllowedChatIds !== '' ? $telegramAllowedChatIds : 'not restricted') ?></div>
-                            <div>Secret token: <?= escape($maskedWebhookSecret) ?></div>
                         </div>
                     </div>
 
@@ -213,18 +204,6 @@ $maskedWebhookSecret = mask_secret($telegramWebhookSecret);
                                 autocomplete="off"
                             >
                             <div class="form-text">Leave blank to keep the current token.</div>
-                        </div>
-                        <div class="col-12 col-lg-6">
-                            <label for="telegram_webhook_secret" class="form-label">Webhook secret</label>
-                            <input
-                                id="telegram_webhook_secret"
-                                type="text"
-                                name="telegram_webhook_secret"
-                                class="form-control"
-                                placeholder="<?= $telegramWebhookSecret !== '' ? 'Leave blank to keep current secret' : 'Optional secret token' ?>"
-                                autocomplete="off"
-                            >
-                            <div class="form-text">Leave blank to keep the current secret token.</div>
                         </div>
                         <div class="col-12 col-lg-6">
                             <label for="telegram_allowed_chat_ids" class="form-label">Allowed chat IDs</label>

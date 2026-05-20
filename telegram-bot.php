@@ -8,22 +8,11 @@ $allowedChatIds = array_values(array_filter(array_map(
     static fn (string $value): string => trim($value),
     explode(',', contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS'))
 )));
-$webhookSecret = contact_trace_env('TELEGRAM_WEBHOOK_SECRET');
 
 if ($botToken === '') {
     http_response_code(500);
     echo 'Missing TELEGRAM_BOT_TOKEN';
     exit;
-}
-
-if ($webhookSecret !== '') {
-    $providedSecret = trim((string) ($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? ''));
-
-    if ($providedSecret !== $webhookSecret) {
-        http_response_code(403);
-        echo 'Forbidden';
-        exit;
-    }
 }
 
 $rawBody = file_get_contents('php://input');
