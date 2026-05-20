@@ -381,27 +381,12 @@ function contact_trace_telegram_api_request(string $botToken, string $method, ar
         throw new RuntimeException('Unable to encode Telegram request payload.');
     }
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'POST',
-            'header' => implode("\r\n", [
-                'Content-Type: application/json',
-                'Content-Length: ' . strlen($body),
-            ]),
-            'content' => $body,
-            'ignore_errors' => true,
-            'timeout' => 15,
-        ],
-    ]);
+    $url = 'https://api.telegram.org/bot' . rawurlencode($botToken) . '/' . rawurlencode($method);
 
-    $response = file_get_contents(
-        'https://api.telegram.org/bot' . rawurlencode($botToken) . '/' . rawurlencode($method),
-        false,
-        $context
-    );
-
-    if ($response === false) {
-        throw new RuntimeException('Telegram API request failed.');
+    if (function_exists('curl_init')) {
+        $response = contact_trace_telegram_api_request_via_curl($url, $body);
+    } else {
+        $response = contact_trace_telegram_api_request_via_stream($url, $body);
     }
 
     $decoded = json_decode($response, true);
@@ -418,6 +403,65 @@ function contact_trace_telegram_api_request(string $botToken, string $method, ar
     $result = $decoded['result'] ?? [];
 
     return is_array($result) ? $result : [];
+}
+
+function contact_trace_telegram_api_request_via_curl(string $url, string $body): string
+{
+    $handle = curl_init($url);
+
+    if ($handle === false) {
+        throw new RuntimeException('Unable to initialize cURL for Telegram API request.');
+    }
+
+    curl_setopt_array($handle, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Content-Length: ' . strlen($body),
+        ],
+        CURLOPT_POSTFIELDS => $body,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+
+    $response = curl_exec($handle);
+
+    if ($response === false) {
+        $errorMessage = trim(curl_error($handle));
+        curl_close($handle);
+        throw new RuntimeException('Telegram API request failed: ' . ($errorMessage !== '' ? $errorMessage : 'Unknown cURL error.'));
+    }
+
+    curl_close($handle);
+
+    return is_string($response) ? $response : '';
+}
+
+function contact_trace_telegram_api_request_via_stream(string $url, string $body): string
+{
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => implode("\r\n", [
+                'Content-Type: application/json',
+                'Content-Length: ' . strlen($body),
+            ]),
+            'content' => $body,
+            'ignore_errors' => true,
+            'timeout' => 15,
+        ],
+    ]);
+
+    $response = @file_get_contents($url, false, $context);
+
+    if ($response === false) {
+        $lastError = error_get_last();
+        $errorMessage = trim((string) ($lastError['message'] ?? 'Unknown stream error.'));
+        throw new RuntimeException('Telegram API request failed: ' . $errorMessage);
+    }
+
+    return $response;
 }
 
 function contact_trace_register_telegram_webhook(string $botToken, string $webhookUrl): array
