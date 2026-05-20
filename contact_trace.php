@@ -1,6 +1,65 @@
 <?php
 declare(strict_types=1);
 
+function contact_trace_load_env_file(): void
+{
+    static $loaded = false;
+
+    if ($loaded) {
+        return;
+    }
+
+    $loaded = true;
+    $envPath = __DIR__ . DIRECTORY_SEPARATOR . '.env';
+
+    if (!is_file($envPath) || !is_readable($envPath)) {
+        return;
+    }
+
+    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    if ($lines === false) {
+        return;
+    }
+
+    foreach ($lines as $line) {
+        $trimmedLine = trim($line);
+
+        if ($trimmedLine === '' || str_starts_with($trimmedLine, '#')) {
+            continue;
+        }
+
+        $separatorPosition = strpos($trimmedLine, '=');
+
+        if ($separatorPosition === false) {
+            continue;
+        }
+
+        $name = trim(substr($trimmedLine, 0, $separatorPosition));
+        $value = trim(substr($trimmedLine, $separatorPosition + 1));
+
+        if ($name === '') {
+            continue;
+        }
+
+        if ((str_starts_with($value, '"') && str_ends_with($value, '"')) || (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
+            $value = substr($value, 1, -1);
+        }
+
+        if (getenv($name) === false) {
+            putenv($name . '=' . $value);
+        }
+
+        if (!array_key_exists($name, $_ENV)) {
+            $_ENV[$name] = $value;
+        }
+
+        if (!array_key_exists($name, $_SERVER)) {
+            $_SERVER[$name] = $value;
+        }
+    }
+}
+
 function contact_trace_database_directory(): string
 {
     return __DIR__ . DIRECTORY_SEPARATOR . 'data';
@@ -248,6 +307,8 @@ function contact_trace_delete_lead(PDO $pdo, int $id): bool
 
 function contact_trace_env(string $name): string
 {
+    contact_trace_load_env_file();
+
     $value = getenv($name);
 
     if (is_string($value) && $value !== '') {

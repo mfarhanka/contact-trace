@@ -110,6 +110,12 @@ function current_request_host(): string
 
 function suggested_telegram_webhook_url(): string
 {
+    $publicBaseUrl = rtrim(contact_trace_env('APP_PUBLIC_URL'), '/');
+
+    if ($publicBaseUrl !== '') {
+        return $publicBaseUrl . '/telegram-bot.php';
+    }
+
     $scriptPath = str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/index.php')));
     $basePath = rtrim($scriptPath, '/');
 
@@ -192,6 +198,8 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
 $telegramWebhookUrl = suggested_telegram_webhook_url();
 $telegramBotReady = $telegramBotToken !== '';
 $isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(current_request_host(), 'localhost') === false && current_request_host() !== '127.0.0.1';
+$publicBaseUrl = contact_trace_env('APP_PUBLIC_URL');
+$isSuggestedWebhookPublic = $publicBaseUrl !== '' || $isSuggestedWebhookPublic;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -255,6 +263,7 @@ $isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(curr
                             >
                             <div class="form-text">
                                 Telegram requires a public HTTPS URL. <?= $isSuggestedWebhookPublic ? 'The suggested URL looks public.' : 'The suggested URL is local, so replace it with your public domain or tunnel URL.' ?>
+                                <?= $publicBaseUrl === '' ? 'Set APP_PUBLIC_URL in .env to prefill the public webhook URL here.' : '' ?>
                             </div>
                         </div>
                         <div class="col-6 col-lg-2 d-grid">

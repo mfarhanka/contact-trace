@@ -24,9 +24,11 @@ You can control the same leads database through a Telegram bot webhook.
 	- `TELEGRAM_BOT_TOKEN`: your bot token from BotFather.
 	- `TELEGRAM_ALLOWED_CHAT_IDS`: optional comma-separated chat IDs allowed to use the bot.
 	- `TELEGRAM_WEBHOOK_SECRET`: optional secret token that must match the Telegram webhook header.
-2. Expose the app on a public HTTPS URL. Telegram cannot call `localhost` directly.
-3. Open the browser app and use the Telegram bot card to register your webhook automatically, or point it manually to `https://your-domain/contact-trace/telegram-bot.php`.
-4. Send commands to your bot:
+	- `APP_PUBLIC_URL`: optional public base URL such as `https://your-domain/contact-trace` used to prefill the webhook URL in the browser.
+2. Instead of Apache environment variables, you can also create a local `.env` file in the project root. Start from `.env.example` and fill in your values there.
+3. Expose the app on a public HTTPS URL. Telegram cannot call `localhost` directly.
+4. Open the browser app and use the Telegram bot card to register your webhook automatically, or point it manually to `https://your-domain/contact-trace/telegram-bot.php`.
+5. Send commands to your bot:
 	- `/search keyword`
 	- `/delete 12`
 	- `/add 012-3456789 | https://example.com/ad | Ali | @ali_owner | Aircond service | Interested | Call Friday | contacted`
