@@ -112,6 +112,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         redirect_with_feedback('Lead updated.', 'success', $search);
     }
+
+    if ($action === 'delete_lead') {
+        $id = (int) ($_POST['id'] ?? 0);
+        $search = trim((string) ($_POST['search'] ?? ''));
+
+        if ($id < 1) {
+            redirect_with_feedback('Lead not found.', 'error', $search);
+        }
+
+        if (!contact_trace_delete_lead($pdo, $id)) {
+            redirect_with_feedback('Lead not found.', 'error', $search);
+        }
+
+        redirect_with_feedback('Lead removed.', 'success', $search);
+    }
 }
 
 $statuses = contact_trace_allowed_statuses();
@@ -291,17 +306,25 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                                     <div><?= escape(date('h:i A', strtotime($lead['updated_at']))) ?></div>
                                                 </td>
                                                 <td>
-                                                    <button
-                                                        type="button"
-                                                        class="btn btn-outline-secondary btn-sm"
-                                                        data-bs-toggle="modal"
-                                                        data-bs-target="#editLeadModal"
-                                                        data-lead-id="<?= (int) $lead['id'] ?>"
-                                                        data-lead-name="<?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?>"
-                                                        data-latest-reply="<?= escape($lead['latest_reply']) ?>"
-                                                        data-notes="<?= escape($lead['notes']) ?>"
-                                                        data-status="<?= escape($lead['status']) ?>"
-                                                    >Edit</button>
+                                                    <div class="d-flex flex-wrap gap-2">
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-outline-secondary btn-sm"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#editLeadModal"
+                                                            data-lead-id="<?= (int) $lead['id'] ?>"
+                                                            data-lead-name="<?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?>"
+                                                            data-latest-reply="<?= escape($lead['latest_reply']) ?>"
+                                                            data-notes="<?= escape($lead['notes']) ?>"
+                                                            data-status="<?= escape($lead['status']) ?>"
+                                                        >Edit</button>
+                                                        <form method="post" onsubmit="return confirm('Remove this lead?');">
+                                                            <input type="hidden" name="action" value="delete_lead">
+                                                            <input type="hidden" name="id" value="<?= (int) $lead['id'] ?>">
+                                                            <input type="hidden" name="search" value="<?= escape($searchTerm) ?>">
+                                                            <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+                                                        </form>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
