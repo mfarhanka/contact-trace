@@ -205,7 +205,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                             <div class="d-flex flex-column flex-md-row justify-content-md-between gap-3 mb-3">
                                 <div>
                                     <h2 class="h5 mb-1">Search leads</h2>
-                                    <p class="text-secondary small mb-0">Search by phone number, Telegram, owner name, note, or ad link.</p>
+                                    <p class="text-secondary small mb-0">Search by phone number, owner name, note, or ad link.</p>
                                 </div>
 
                                 <form method="get" class="row g-2">
@@ -214,7 +214,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                             type="search"
                                             name="search"
                                             class="form-control"
-                                            placeholder="Search phone or Telegram"
+                                            placeholder="Search phone, owner, notes, or ad"
                                             value="<?= escape($searchTerm) ?>"
                                         >
                                     </div>
