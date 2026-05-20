@@ -50,6 +50,40 @@ function normalize_phone(string $phone): string
     return preg_replace('/\D+/', '', $phone) ?? '';
 }
 
+function normalize_whatsapp_phone(string $phone): string
+{
+    $digits = normalize_phone($phone);
+
+    if ($digits === '') {
+        return '';
+    }
+
+    if (str_starts_with($digits, '00')) {
+        return substr($digits, 2);
+    }
+
+    if (str_starts_with($digits, '60')) {
+        return $digits;
+    }
+
+    if (str_starts_with($digits, '0')) {
+        return '6' . $digits;
+    }
+
+    return $digits;
+}
+
+function whatsapp_link(string $phone): string
+{
+    $whatsappPhone = normalize_whatsapp_phone($phone);
+
+    if ($whatsappPhone === '') {
+        return '';
+    }
+
+    return 'https://wa.me/' . rawurlencode($whatsappPhone);
+}
+
 function telegram_link(string $telegramHandle): string
 {
     $normalizedHandle = ltrim(trim($telegramHandle), '@');
@@ -286,7 +320,8 @@ $leads = $statement->fetchAll();
 
                                 <div>
                                     <label for="phone_display" class="form-label">Phone number</label>
-                                    <input id="phone_display" type="text" name="phone_display" class="form-control" placeholder="012-3456789" required>
+                                    <input id="phone_display" type="text" name="phone_display" class="form-control" placeholder="012-3456789" inputmode="tel" required>
+                                    <div class="form-text">WhatsApp links auto-convert local numbers like 012-3456789 to 60123456789.</div>
                                 </div>
 
                                 <div>
@@ -384,6 +419,12 @@ $leads = $statement->fetchAll();
                                                 <td>
                                                     <div class="fw-semibold"><?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?></div>
                                                     <div class="text-secondary small"><?= escape($lead['phone_display']) ?></div>
+                                                    <?php $whatsappLink = whatsapp_link($lead['phone_display']); ?>
+                                                    <?php if ($whatsappLink !== ''): ?>
+                                                        <div class="small">
+                                                            <a href="<?= escape($whatsappLink) ?>" target="_blank" rel="noreferrer">WhatsApp</a>
+                                                        </div>
+                                                    <?php endif; ?>
                                                     <?php if ($lead['telegram_handle'] !== ''): ?>
                                                         <div class="small">
                                                             <a href="<?= escape(telegram_link($lead['telegram_handle'])) ?>" target="_blank" rel="noreferrer">
