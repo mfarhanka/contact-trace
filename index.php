@@ -133,16 +133,6 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
 </head>
 <body class="bg-body-tertiary">
 <div class="container py-4 py-lg-5">
-    <div class="row justify-content-center mb-4">
-        <div class="col-12 col-xl-10">
-            <div class="border rounded bg-white shadow-sm p-4">
-                <h1 class="h2 mb-2">Contact Trace</h1>
-                <p class="text-secondary mb-1">Save the phone number, the ad link, and the latest reply so you can search later.</p>
-                <p class="small text-body-secondary mb-0">Simple flow: save lead, search phone number, open the related ad.</p>
-            </div>
-        </div>
-    </div>
-
     <div class="row justify-content-center">
         <div class="col-12 col-xl-10">
             <?php if ($message !== ''): ?>
@@ -150,20 +140,6 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                     <?= escape($message) ?>
                 </div>
             <?php endif; ?>
-
-            <div class="card shadow-sm mb-4">
-                <div class="card-body p-4">
-                    <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center gap-3">
-                        <div>
-                            <h2 class="h5 mb-1">Admin</h2>
-                            <p class="text-secondary small mb-0">Open the separate admin page to manage Telegram bot settings and webhook registration.</p>
-                        </div>
-                        <div>
-                            <a href="admin.php" class="btn btn-outline-primary">Open admin page</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <div class="row g-4 align-items-start">
                 <div class="col-12 col-lg-4">
@@ -361,6 +337,20 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                     </table>
                                 </div>
                             <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mt-4">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center gap-3">
+                        <div>
+                            <h2 class="h5 mb-1">Admin</h2>
+                            <p class="text-secondary small mb-0">Open the separate admin page to manage Telegram bot settings and webhook registration.</p>
+                        </div>
+                        <div>
+                            <a href="admin.php" class="btn btn-outline-primary">Open admin page</a>
                         </div>
                     </div>
                 </div>
