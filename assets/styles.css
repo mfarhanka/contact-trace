@@ -2,35 +2,6 @@ body {
     min-height: 100vh;
 }
 
-.app-header {
-    max-width: 760px;
-}
-
-.search-row {
-    min-width: min(100%, 340px);
-}
-
-.lead-card-simple {
-    background: #fff;
-}
-
-.status-badge {
-    letter-spacing: 0.04em;
-}
-
-.status-new,
-.status-contacted {
-    background-color: #fff3cd !important;
-    color: #664d03 !important;
-}
-
-.status-replied,
-.status-follow-up {
-    background-color: #d1e7dd !important;
-    color: #0f5132 !important;
-}
-
-.status-closed {
-    background-color: #e2e3e5 !important;
-    color: #41464b !important;
+textarea.form-control {
+    resize: vertical;
 }

@@ -42,6 +42,16 @@ function normalize_phone(string $phone): string
     return preg_replace('/\D+/', '', $phone) ?? '';
 }
 
+function status_badge_class(string $status): string
+{
+    return match ($status) {
+        'new', 'contacted' => 'text-bg-warning',
+        'replied', 'follow-up' => 'text-bg-success',
+        'closed' => 'text-bg-secondary',
+        default => 'text-bg-light',
+    };
+}
+
 function redirect_with_feedback(string $message, string $type, string $search = ''): never
 {
     $query = ['message' => $message, 'type' => $type];
@@ -214,7 +224,7 @@ $leads = $statement->fetchAll();
 <div class="container py-4 py-lg-5">
     <div class="row justify-content-center mb-4">
         <div class="col-12 col-xl-10">
-            <div class="app-header border rounded-4 bg-white shadow-sm p-4">
+            <div class="border rounded bg-white shadow-sm p-4">
                 <h1 class="h2 mb-2">Contact Trace</h1>
                 <p class="text-secondary mb-1">Save the phone number, the ad link, and the latest reply so you can search later.</p>
                 <p class="small text-body-secondary mb-0">Simple flow: save lead, search phone number, open the related ad.</p>
@@ -232,7 +242,7 @@ $leads = $statement->fetchAll();
 
             <div class="row g-4 align-items-start">
                 <div class="col-12 col-lg-4">
-                    <div class="card shadow-sm border-0 h-100">
+                    <div class="card shadow-sm h-100">
                         <div class="card-body p-4">
                             <h2 class="h5 mb-1">Add lead</h2>
                             <p class="text-secondary small mb-4">Store one owner together with the ad link.</p>
@@ -288,7 +298,7 @@ $leads = $statement->fetchAll();
                 </div>
 
                 <div class="col-12 col-lg-8">
-                    <div class="card shadow-sm border-0">
+                    <div class="card shadow-sm">
                         <div class="card-body p-4">
                             <div class="d-flex flex-column flex-md-row justify-content-md-between gap-3 mb-3">
                                 <div>
@@ -296,7 +306,7 @@ $leads = $statement->fetchAll();
                                     <p class="text-secondary small mb-0">Search by phone number, owner name, note, or ad link.</p>
                                 </div>
 
-                                <form method="get" class="row g-2 search-row">
+                                <form method="get" class="row g-2">
                                     <div class="col">
                                         <input
                                             type="search"
@@ -326,75 +336,85 @@ $leads = $statement->fetchAll();
                                     <p class="text-secondary small mb-0">Save your first contact, then search here by phone number later.</p>
                                 </div>
                             <?php else: ?>
-                                <div class="vstack gap-3">
-                                    <?php foreach ($leads as $lead): ?>
-                                        <section class="card border lead-card-simple">
-                                            <div class="card-body p-4">
-                                                <div class="d-flex flex-column flex-md-row justify-content-md-between gap-2 mb-3">
-                                                    <div>
-                                                        <h3 class="h6 mb-1"><?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?></h3>
-                                                        <div class="text-secondary small"><?= escape($lead['phone_display']) ?></div>
-                                                    </div>
-                                                    <div>
-                                                        <span class="badge text-bg-light border text-uppercase status-badge status-<?= escape($lead['status']) ?>">
-                                                            <?= escape(ucwords($lead['status'])) ?>
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle">
+                                        <thead>
+                                        <tr>
+                                            <th scope="col">Owner</th>
+                                            <th scope="col">Ad</th>
+                                            <th scope="col">Reply</th>
+                                            <th scope="col">Notes</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col">Updated</th>
+                                            <th scope="col">Action</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php foreach ($leads as $lead): ?>
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold"><?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?></div>
+                                                    <div class="text-secondary small"><?= escape($lead['phone_display']) ?></div>
+                                                    <div class="text-secondary small"><?= escape($lead['service_offer']) !== '' ? escape($lead['service_offer']) : 'No service set' ?></div>
+                                                </td>
+                                                <td>
+                                                    <a href="<?= escape($lead['ad_url']) ?>" target="_blank" rel="noreferrer">Open ad</a>
+                                                </td>
+                                                <td colspan="5">
+                                                    <form method="post" class="row g-2 align-items-start">
+                                                        <input type="hidden" name="action" value="update_lead">
+                                                        <input type="hidden" name="id" value="<?= (int) $lead['id'] ?>">
+                                                        <input type="hidden" name="search" value="<?= escape($searchTerm) ?>">
 
-                                                <div class="row g-3 small mb-3">
-                                                    <div class="col-12 col-md-6">
-                                                        <div class="text-secondary">Ad link</div>
-                                                        <a href="<?= escape($lead['ad_url']) ?>" target="_blank" rel="noreferrer">Open ad</a>
-                                                    </div>
-                                                    <div class="col-12 col-md-6">
-                                                        <div class="text-secondary">Service</div>
-                                                        <div><?= escape($lead['service_offer']) !== '' ? escape($lead['service_offer']) : 'Not set' ?></div>
-                                                    </div>
-                                                    <div class="col-12 col-md-6">
-                                                        <div class="text-secondary">Saved</div>
-                                                        <div><?= escape(date('d M Y, h:i A', strtotime($lead['created_at']))) ?></div>
-                                                    </div>
-                                                    <div class="col-12 col-md-6">
-                                                        <div class="text-secondary">Updated</div>
-                                                        <div><?= escape(date('d M Y, h:i A', strtotime($lead['updated_at']))) ?></div>
-                                                    </div>
-                                                </div>
+                                                        <div class="col-12 col-xl-3">
+                                                            <textarea
+                                                                id="latest_reply_<?= (int) $lead['id'] ?>"
+                                                                name="latest_reply"
+                                                                rows="2"
+                                                                class="form-control form-control-sm"
+                                                                placeholder="Latest reply"
+                                                            ><?= escape($lead['latest_reply']) ?></textarea>
+                                                        </div>
 
-                                                <form method="post" class="vstack gap-3">
-                                                    <input type="hidden" name="action" value="update_lead">
-                                                    <input type="hidden" name="id" value="<?= (int) $lead['id'] ?>">
-                                                    <input type="hidden" name="search" value="<?= escape($searchTerm) ?>">
+                                                        <div class="col-12 col-xl-3">
+                                                            <textarea
+                                                                id="notes_<?= (int) $lead['id'] ?>"
+                                                                name="notes"
+                                                                rows="2"
+                                                                class="form-control form-control-sm"
+                                                                placeholder="Notes"
+                                                            ><?= escape($lead['notes']) ?></textarea>
+                                                        </div>
 
-                                                    <div>
-                                                        <label for="latest_reply_<?= (int) $lead['id'] ?>" class="form-label">Latest reply</label>
-                                                        <textarea id="latest_reply_<?= (int) $lead['id'] ?>" name="latest_reply" rows="3" class="form-control"><?= escape($lead['latest_reply']) ?></textarea>
-                                                    </div>
-
-                                                    <div>
-                                                        <label for="notes_<?= (int) $lead['id'] ?>" class="form-label">Notes</label>
-                                                        <textarea id="notes_<?= (int) $lead['id'] ?>" name="notes" rows="3" class="form-control"><?= escape($lead['notes']) ?></textarea>
-                                                    </div>
-
-                                                    <div class="row g-2 align-items-end">
-                                                        <div class="col-12 col-md-6">
-                                                            <label for="status_<?= (int) $lead['id'] ?>" class="form-label">Status</label>
-                                                            <select id="status_<?= (int) $lead['id'] ?>" name="status" class="form-select">
+                                                        <div class="col-6 col-xl-2">
+                                                            <select id="status_<?= (int) $lead['id'] ?>" name="status" class="form-select form-select-sm">
                                                                 <?php foreach ($statuses as $status): ?>
                                                                     <option value="<?= escape($status) ?>" <?= $lead['status'] === $status ? 'selected' : '' ?>>
                                                                         <?= escape(ucwords($status)) ?>
                                                                     </option>
                                                                 <?php endforeach; ?>
                                                             </select>
+                                                            <div class="mt-2">
+                                                                <span class="badge <?= status_badge_class($lead['status']) ?>">
+                                                                    <?= escape(ucwords($lead['status'])) ?>
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                        <div class="col-12 col-md-auto ms-md-auto">
-                                                            <button type="submit" class="btn btn-outline-secondary w-100">Update</button>
+
+                                                        <div class="col-6 col-xl-2 small text-secondary">
+                                                            <div><?= escape(date('d M Y', strtotime($lead['updated_at']))) ?></div>
+                                                            <div><?= escape(date('h:i A', strtotime($lead['updated_at']))) ?></div>
                                                         </div>
-                                                    </div>
-                                                </form>
-                                            </div>
-                                        </section>
-                                    <?php endforeach; ?>
+
+                                                        <div class="col-12 col-xl-2">
+                                                            <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Update</button>
+                                                        </div>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
                                 </div>
                             <?php endif; ?>
                         </div>
