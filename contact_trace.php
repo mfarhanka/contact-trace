@@ -245,3 +245,101 @@ function contact_trace_delete_lead(PDO $pdo, int $id): bool
 
     return $statement->rowCount() > 0;
 }
+
+function contact_trace_env(string $name): string
+{
+    $value = getenv($name);
+
+    if (is_string($value) && $value !== '') {
+        return trim($value);
+    }
+
+    $serverValue = $_SERVER[$name] ?? $_ENV[$name] ?? '';
+
+    return is_string($serverValue) ? trim($serverValue) : '';
+}
+
+function contact_trace_telegram_api_request(string $botToken, string $method, array $payload = []): array
+{
+    if ($botToken === '') {
+        throw new InvalidArgumentException('Missing TELEGRAM_BOT_TOKEN.');
+    }
+
+    $body = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+    if ($body === false) {
+        throw new RuntimeException('Unable to encode Telegram request payload.');
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => implode("\r\n", [
+                'Content-Type: application/json',
+                'Content-Length: ' . strlen($body),
+            ]),
+            'content' => $body,
+            'ignore_errors' => true,
+            'timeout' => 15,
+        ],
+    ]);
+
+    $response = file_get_contents(
+        'https://api.telegram.org/bot' . rawurlencode($botToken) . '/' . rawurlencode($method),
+        false,
+        $context
+    );
+
+    if ($response === false) {
+        throw new RuntimeException('Telegram API request failed.');
+    }
+
+    $decoded = json_decode($response, true);
+
+    if (!is_array($decoded)) {
+        throw new RuntimeException('Telegram API returned an invalid response.');
+    }
+
+    if (($decoded['ok'] ?? false) !== true) {
+        $description = trim((string) ($decoded['description'] ?? 'Telegram API error.'));
+        throw new RuntimeException($description !== '' ? $description : 'Telegram API error.');
+    }
+
+    $result = $decoded['result'] ?? [];
+
+    return is_array($result) ? $result : [];
+}
+
+function contact_trace_register_telegram_webhook(string $botToken, string $webhookUrl, string $secretToken = ''): array
+{
+    $cleanUrl = trim($webhookUrl);
+
+    if ($cleanUrl === '') {
+        throw new InvalidArgumentException('Webhook URL is required.');
+    }
+
+    if (!filter_var($cleanUrl, FILTER_VALIDATE_URL)) {
+        throw new InvalidArgumentException('Please enter a valid webhook URL.');
+    }
+
+    $payload = ['url' => $cleanUrl];
+
+    if ($secretToken !== '') {
+        $payload['secret_token'] = $secretToken;
+    }
+
+    return contact_trace_telegram_api_request($botToken, 'setWebhook', $payload);
+}
+
+function contact_trace_get_telegram_webhook_info(string $botToken): array
+{
+    return contact_trace_telegram_api_request($botToken, 'getWebhookInfo');
+}
+
+function contact_trace_send_telegram_message(string $botToken, string $chatId, string $text): void
+{
+    contact_trace_telegram_api_request($botToken, 'sendMessage', [
+        'chat_id' => $chatId,
+        'text' => $text,
+    ]);
+}

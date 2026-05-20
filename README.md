@@ -25,7 +25,7 @@ You can control the same leads database through a Telegram bot webhook.
 	- `TELEGRAM_ALLOWED_CHAT_IDS`: optional comma-separated chat IDs allowed to use the bot.
 	- `TELEGRAM_WEBHOOK_SECRET`: optional secret token that must match the Telegram webhook header.
 2. Expose the app on a public HTTPS URL. Telegram cannot call `localhost` directly.
-3. Point your Telegram webhook to `https://your-domain/contact-trace/telegram-bot.php`.
+3. Open the browser app and use the Telegram bot card to register your webhook automatically, or point it manually to `https://your-domain/contact-trace/telegram-bot.php`.
 4. Send commands to your bot:
 	- `/search keyword`
 	- `/delete 12`

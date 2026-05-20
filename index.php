@@ -8,6 +8,9 @@ $pdo = contact_trace_get_pdo();
 $message = '';
 $messageType = 'success';
 $searchTerm = trim((string) ($_GET['search'] ?? ''));
+$telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
+$telegramWebhookSecret = contact_trace_env('TELEGRAM_WEBHOOK_SECRET');
+$telegramAllowedChatIds = contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS');
 
 function escape(string $value): string
 {
@@ -81,6 +84,54 @@ function redirect_with_feedback(string $message, string $type, string $search = 
     exit;
 }
 
+function current_request_scheme(): string
+{
+    $forwardedProto = trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+
+    if ($forwardedProto !== '') {
+        return strtolower(explode(',', $forwardedProto)[0]);
+    }
+
+    $https = strtolower((string) ($_SERVER['HTTPS'] ?? ''));
+
+    return $https !== '' && $https !== 'off' ? 'https' : 'http';
+}
+
+function current_request_host(): string
+{
+    $forwardedHost = trim((string) ($_SERVER['HTTP_X_FORWARDED_HOST'] ?? ''));
+
+    if ($forwardedHost !== '') {
+        return trim(explode(',', $forwardedHost)[0]);
+    }
+
+    return trim((string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+}
+
+function suggested_telegram_webhook_url(): string
+{
+    $scriptPath = str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/index.php')));
+    $basePath = rtrim($scriptPath, '/');
+
+    return current_request_scheme() . '://' . current_request_host() . ($basePath === '' ? '' : $basePath) . '/telegram-bot.php';
+}
+
+function telegram_webhook_status_summary(array $info): string
+{
+    $url = trim((string) ($info['url'] ?? ''));
+    $pendingUpdates = (int) ($info['pending_update_count'] ?? 0);
+    $lastError = trim((string) ($info['last_error_message'] ?? ''));
+
+    $parts = ['Webhook ' . ($url !== '' ? 'set to ' . $url : 'is not set') . '.'];
+    $parts[] = 'Pending updates: ' . $pendingUpdates . '.';
+
+    if ($lastError !== '') {
+        $parts[] = 'Last error: ' . $lastError . '.';
+    }
+
+    return implode(' ', $parts);
+}
+
 if (isset($_GET['message'])) {
     $message = trim((string) $_GET['message']);
     $messageType = $_GET['type'] === 'error' ? 'error' : 'success';
@@ -90,13 +141,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add_lead') {
-            $phoneDisplay = trim((string) ($_POST['phone_display'] ?? ''));
+        $phoneDisplay = trim((string) ($_POST['phone_display'] ?? ''));
 
-            try {
-                contact_trace_add_lead($pdo, $_POST);
-            } catch (InvalidArgumentException $exception) {
-                redirect_with_feedback($exception->getMessage(), 'error');
-            }
+        try {
+            contact_trace_add_lead($pdo, $_POST);
+        } catch (InvalidArgumentException $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
 
         redirect_with_feedback('Lead saved.', 'success', $phoneDisplay);
     }
@@ -104,18 +155,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'update_lead') {
         $id = (int) ($_POST['id'] ?? 0);
         $search = trim((string) ($_POST['search'] ?? ''));
-            try {
-                contact_trace_update_lead($pdo, $id, $_POST);
-            } catch (InvalidArgumentException $exception) {
-                redirect_with_feedback($exception->getMessage(), 'error', $search);
-            }
+        try {
+            contact_trace_update_lead($pdo, $id, $_POST);
+        } catch (InvalidArgumentException $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error', $search);
+        }
 
         redirect_with_feedback('Lead updated.', 'success', $search);
+    }
+
+    if ($action === 'register_telegram_webhook') {
+        $webhookUrl = trim((string) ($_POST['webhook_url'] ?? ''));
+
+        try {
+            contact_trace_register_telegram_webhook($telegramBotToken, $webhookUrl, $telegramWebhookSecret);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback('Telegram webhook registered: ' . $webhookUrl, 'success');
+    }
+
+    if ($action === 'check_telegram_webhook') {
+        try {
+            $webhookInfo = contact_trace_get_telegram_webhook_info($telegramBotToken);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback(telegram_webhook_status_summary($webhookInfo), 'success');
     }
 }
 
 $statuses = contact_trace_allowed_statuses();
 $leads = contact_trace_search_leads($pdo, $searchTerm);
+$telegramWebhookUrl = suggested_telegram_webhook_url();
+$telegramBotReady = $telegramBotToken !== '';
+$isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(current_request_host(), 'localhost') === false && current_request_host() !== '127.0.0.1';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -150,6 +226,50 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                     <?= escape($message) ?>
                 </div>
             <?php endif; ?>
+
+            <div class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                        <div>
+                            <h2 class="h5 mb-1">Telegram bot</h2>
+                            <p class="text-secondary small mb-0">Register the public webhook for <strong>telegram-bot.php</strong> without leaving the browser.</p>
+                        </div>
+                        <div class="small text-secondary">
+                            <div>Bot token: <?= $telegramBotReady ? 'configured' : 'missing' ?></div>
+                            <div>Allowed chat IDs: <?= escape($telegramAllowedChatIds !== '' ? $telegramAllowedChatIds : 'not restricted') ?></div>
+                            <div>Secret token: <?= $telegramWebhookSecret !== '' ? 'configured' : 'not set' ?></div>
+                        </div>
+                    </div>
+
+                    <form method="post" class="row g-3 align-items-end">
+                        <div class="col-12 col-lg-8">
+                            <label for="webhook_url" class="form-label">Webhook URL</label>
+                            <input
+                                id="webhook_url"
+                                type="url"
+                                name="webhook_url"
+                                class="form-control"
+                                value="<?= escape($telegramWebhookUrl) ?>"
+                                placeholder="https://your-domain/contact-trace/telegram-bot.php"
+                                required
+                            >
+                            <div class="form-text">
+                                Telegram requires a public HTTPS URL. <?= $isSuggestedWebhookPublic ? 'The suggested URL looks public.' : 'The suggested URL is local, so replace it with your public domain or tunnel URL.' ?>
+                            </div>
+                        </div>
+                        <div class="col-6 col-lg-2 d-grid">
+                            <button type="submit" name="action" value="register_telegram_webhook" class="btn btn-outline-primary" <?= $telegramBotReady ? '' : 'disabled' ?>>Register webhook</button>
+                        </div>
+                        <div class="col-6 col-lg-2 d-grid">
+                            <button type="submit" name="action" value="check_telegram_webhook" class="btn btn-outline-secondary" <?= $telegramBotReady ? '' : 'disabled' ?>>Check status</button>
+                        </div>
+                    </form>
+
+                    <?php if (!$telegramBotReady): ?>
+                        <p class="small text-danger mb-0 mt-3">Set <code>TELEGRAM_BOT_TOKEN</code> in Apache or your hosting runtime before registering the webhook.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
 
             <div class="row g-4 align-items-start">
                 <div class="col-12 col-lg-4">

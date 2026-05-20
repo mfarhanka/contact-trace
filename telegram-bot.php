@@ -3,12 +3,12 @@ declare(strict_types=1);
 
 require __DIR__ . DIRECTORY_SEPARATOR . 'contact_trace.php';
 
-$botToken = trim((string) getenv('TELEGRAM_BOT_TOKEN'));
+$botToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
 $allowedChatIds = array_values(array_filter(array_map(
     static fn (string $value): string => trim($value),
-    explode(',', (string) getenv('TELEGRAM_ALLOWED_CHAT_IDS'))
+    explode(',', contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS'))
 )));
-$webhookSecret = trim((string) getenv('TELEGRAM_WEBHOOK_SECRET'));
+$webhookSecret = contact_trace_env('TELEGRAM_WEBHOOK_SECRET');
 
 if ($botToken === '') {
     http_response_code(500);
@@ -238,35 +238,4 @@ function contact_trace_add_usage_text(): string
         'Optional order: owner | telegram | service | latest reply | notes | status',
         'Use - for any empty optional value.',
     ]);
-}
-
-function contact_trace_send_telegram_message(string $botToken, string $chatId, string $text): void
-{
-    $payload = json_encode([
-        'chat_id' => $chatId,
-        'text' => $text,
-    ], JSON_UNESCAPED_SLASHES);
-
-    if ($payload === false) {
-        throw new RuntimeException('Unable to encode Telegram response.');
-    }
-
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'POST',
-            'header' => implode("\r\n", [
-                'Content-Type: application/json',
-                'Content-Length: ' . strlen($payload),
-            ]),
-            'content' => $payload,
-            'ignore_errors' => true,
-            'timeout' => 10,
-        ],
-    ]);
-
-    $result = file_get_contents('https://api.telegram.org/bot' . rawurlencode($botToken) . '/sendMessage', false, $context);
-
-    if ($result === false) {
-        throw new RuntimeException('Failed to send Telegram message.');
-    }
 }
