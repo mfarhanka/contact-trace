@@ -1,40 +1,9 @@
 <?php
 declare(strict_types=1);
 
-$databaseDirectory = __DIR__ . DIRECTORY_SEPARATOR . 'data';
-$databasePath = $databaseDirectory . DIRECTORY_SEPARATOR . 'contact-trace.sqlite';
+require __DIR__ . DIRECTORY_SEPARATOR . 'contact_trace.php';
 
-if (!is_dir($databaseDirectory)) {
-    mkdir($databaseDirectory, 0777, true);
-}
-
-$pdo = new PDO('sqlite:' . $databasePath);
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-
-$pdo->exec(
-    'CREATE TABLE IF NOT EXISTS leads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        owner_name TEXT NOT NULL DEFAULT \'\',
-        telegram_handle TEXT NOT NULL DEFAULT \'\',
-        phone_display TEXT NOT NULL,
-        phone_normalized TEXT NOT NULL,
-        ad_url TEXT NOT NULL,
-        service_offer TEXT NOT NULL DEFAULT \'\',
-        latest_reply TEXT NOT NULL DEFAULT \'\',
-        notes TEXT NOT NULL DEFAULT \'\',
-        status TEXT NOT NULL DEFAULT \'contacted\',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    )'
-);
-
-$columns = $pdo->query('PRAGMA table_info(leads)')->fetchAll();
-$columnNames = array_column($columns, 'name');
-
-if (!in_array('telegram_handle', $columnNames, true)) {
-    $pdo->exec("ALTER TABLE leads ADD COLUMN telegram_handle TEXT NOT NULL DEFAULT ''");
-}
+$pdo = contact_trace_get_pdo();
 
 $message = '';
 $messageType = 'success';
@@ -45,14 +14,9 @@ function escape(string $value): string
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
-function normalize_phone(string $phone): string
-{
-    return preg_replace('/\D+/', '', $phone) ?? '';
-}
-
 function normalize_whatsapp_phone(string $phone): string
 {
-    $digits = normalize_phone($phone);
+    $digits = contact_trace_normalize_phone($phone);
 
     if ($digits === '') {
         return '';
@@ -126,71 +90,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add_lead') {
-        $ownerName = trim((string) ($_POST['owner_name'] ?? ''));
-        $telegramHandle = trim((string) ($_POST['telegram_handle'] ?? ''));
-        $phoneDisplay = trim((string) ($_POST['phone_display'] ?? ''));
-        $phoneNormalized = normalize_phone($phoneDisplay);
-        $adUrl = trim((string) ($_POST['ad_url'] ?? ''));
-        $serviceOffer = trim((string) ($_POST['service_offer'] ?? ''));
-        $latestReply = trim((string) ($_POST['latest_reply'] ?? ''));
-        $notes = trim((string) ($_POST['notes'] ?? ''));
-        $status = trim((string) ($_POST['status'] ?? 'contacted'));
+            $phoneDisplay = trim((string) ($_POST['phone_display'] ?? ''));
 
-        if ($phoneDisplay === '' || $phoneNormalized === '' || $adUrl === '') {
-            redirect_with_feedback('Phone number and ad link are required.', 'error');
-        }
-
-        if (!filter_var($adUrl, FILTER_VALIDATE_URL)) {
-            redirect_with_feedback('Please enter a valid ad link.', 'error');
-        }
-
-        $allowedStatuses = ['new', 'contacted', 'replied', 'follow-up', 'closed'];
-        if (!in_array($status, $allowedStatuses, true)) {
-            $status = 'contacted';
-        }
-
-        $timestamp = date('c');
-        $statement = $pdo->prepare(
-            'INSERT INTO leads (
-                owner_name,
-                telegram_handle,
-                phone_display,
-                phone_normalized,
-                ad_url,
-                service_offer,
-                latest_reply,
-                notes,
-                status,
-                created_at,
-                updated_at
-            ) VALUES (
-                :owner_name,
-                :telegram_handle,
-                :phone_display,
-                :phone_normalized,
-                :ad_url,
-                :service_offer,
-                :latest_reply,
-                :notes,
-                :status,
-                :created_at,
-                :updated_at
-            )'
-        );
-
-        $statement->execute([
-            ':owner_name' => $ownerName,
-            ':telegram_handle' => $telegramHandle,
-            ':phone_display' => $phoneDisplay,
-            ':phone_normalized' => $phoneNormalized,
-            ':ad_url' => $adUrl,
-            ':service_offer' => $serviceOffer,
-            ':latest_reply' => $latestReply,
-            ':notes' => $notes,
-            ':status' => $status,
-            ':created_at' => $timestamp,
-            ':updated_at' => $timestamp,
-        ]);
+            try {
+                contact_trace_add_lead($pdo, $_POST);
+            } catch (InvalidArgumentException $exception) {
+                redirect_with_feedback($exception->getMessage(), 'error');
+            }
 
         redirect_with_feedback('Lead saved.', 'success', $phoneDisplay);
     }
@@ -198,71 +104,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'update_lead') {
         $id = (int) ($_POST['id'] ?? 0);
         $search = trim((string) ($_POST['search'] ?? ''));
-        $status = trim((string) ($_POST['status'] ?? 'contacted'));
-        $latestReply = trim((string) ($_POST['latest_reply'] ?? ''));
-        $notes = trim((string) ($_POST['notes'] ?? ''));
-        $allowedStatuses = ['new', 'contacted', 'replied', 'follow-up', 'closed'];
-
-        if ($id <= 0) {
-            redirect_with_feedback('Lead update failed.', 'error', $search);
-        }
-
-        if (!in_array($status, $allowedStatuses, true)) {
-            $status = 'contacted';
-        }
-
-        $statement = $pdo->prepare(
-            'UPDATE leads
-             SET status = :status,
-                 latest_reply = :latest_reply,
-                 notes = :notes,
-                 updated_at = :updated_at
-             WHERE id = :id'
-        );
-
-        $statement->execute([
-            ':status' => $status,
-            ':latest_reply' => $latestReply,
-            ':notes' => $notes,
-            ':updated_at' => date('c'),
-            ':id' => $id,
-        ]);
+            try {
+                contact_trace_update_lead($pdo, $id, $_POST);
+            } catch (InvalidArgumentException $exception) {
+                redirect_with_feedback($exception->getMessage(), 'error', $search);
+            }
 
         redirect_with_feedback('Lead updated.', 'success', $search);
     }
 }
 
-$statuses = ['new', 'contacted', 'replied', 'follow-up', 'closed'];
-
-if ($searchTerm !== '') {
-    $likeTerm = '%' . $searchTerm . '%';
-    $searchDigits = '%' . normalize_phone($searchTerm) . '%';
-
-    $statement = $pdo->prepare(
-        'SELECT *
-         FROM leads
-         WHERE phone_display LIKE :like_term
-            OR phone_normalized LIKE :search_digits
-                OR telegram_handle LIKE :like_term
-            OR owner_name LIKE :like_term
-            OR ad_url LIKE :like_term
-            OR notes LIKE :like_term
-         ORDER BY updated_at DESC'
-    );
-    $statement->execute([
-        ':like_term' => $likeTerm,
-        ':search_digits' => $searchDigits,
-    ]);
-} else {
-    $statement = $pdo->query(
-        'SELECT *
-         FROM leads
-         ORDER BY updated_at DESC
-         LIMIT 20'
-    );
-}
-
-$leads = $statement->fetchAll();
+$statuses = contact_trace_allowed_statuses();
+$leads = contact_trace_search_leads($pdo, $searchTerm);
 ?>
 <!DOCTYPE html>
 <html lang="en">

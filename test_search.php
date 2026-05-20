@@ -1,1 +1,0 @@
-<?php $_GET["search"] = "@tgcheck20260520185741"; include "index.php"; ?>

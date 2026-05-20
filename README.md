@@ -16,6 +16,23 @@ Simple PHP + SQLite tool to track outreach leads from listings like Mudah.
 2. Open `http://localhost/contact-trace/` in your browser.
 3. The SQLite database is created automatically in the `data` folder on first load.
 
+## Telegram bot
+
+You can control the same leads database through a Telegram bot webhook.
+
+1. Set these environment variables for Apache or your hosting runtime:
+	- `TELEGRAM_BOT_TOKEN`: your bot token from BotFather.
+	- `TELEGRAM_ALLOWED_CHAT_IDS`: optional comma-separated chat IDs allowed to use the bot.
+	- `TELEGRAM_WEBHOOK_SECRET`: optional secret token that must match the Telegram webhook header.
+2. Expose the app on a public HTTPS URL. Telegram cannot call `localhost` directly.
+3. Point your Telegram webhook to `https://your-domain/contact-trace/telegram-bot.php`.
+4. Send commands to your bot:
+	- `/search keyword`
+	- `/delete 12`
+	- `/add 012-3456789 | https://example.com/ad | Ali | @ali_owner | Aircond service | Interested | Call Friday | contacted`
+
+Use `-` for any optional empty field in `/add`.
+
 ## Main fields
 
 - `Phone number`: the owner number you contacted.
