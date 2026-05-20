@@ -155,6 +155,15 @@ function contact_trace_ensure_schema(PDO $pdo): void
         )'
     );
 
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS telegram_add_drafts (
+            chat_id TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL DEFAULT \'{}\',
+            current_field TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )'
+    );
+
     $columns = $pdo->query('PRAGMA table_info(leads)')->fetchAll();
     $columnNames = array_column($columns, 'name');
 
