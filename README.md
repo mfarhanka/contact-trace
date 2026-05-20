@@ -27,7 +27,7 @@ You can control the same leads database through a Telegram bot webhook.
 	- `APP_PUBLIC_URL`: optional public base URL such as `https://your-domain/contact-trace` used to prefill the webhook URL in the browser.
 2. Instead of Apache environment variables, you can also create a local `.env` file in the project root. Start from `.env.example` and fill in your values there.
 3. Expose the app on a public HTTPS URL. Telegram cannot call `localhost` directly.
-4. Open the browser app and use the Telegram bot admin card to save the bot token, secret, allowed chat IDs, and public URL into `.env`, then register your webhook automatically.
+4. Open `admin.php` in the browser and use the Telegram admin page to save the bot token, secret, allowed chat IDs, and public URL into `.env`, then register your webhook automatically.
 5. Send commands to your bot:
 	- `/search keyword`
 	- `/delete 12`
