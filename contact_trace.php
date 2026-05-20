@@ -46,18 +46,68 @@ function contact_trace_load_env_file(): void
             $value = substr($value, 1, -1);
         }
 
-        if (getenv($name) === false) {
-            putenv($name . '=' . $value);
-        }
-
-        if (!array_key_exists($name, $_ENV)) {
-            $_ENV[$name] = $value;
-        }
-
-        if (!array_key_exists($name, $_SERVER)) {
-            $_SERVER[$name] = $value;
-        }
+        putenv($name . '=' . $value);
+        $_ENV[$name] = $value;
+        $_SERVER[$name] = $value;
     }
+}
+
+function contact_trace_env_file_path(): string
+{
+    return __DIR__ . DIRECTORY_SEPARATOR . '.env';
+}
+
+function contact_trace_manageable_settings(): array
+{
+    return [
+        'TELEGRAM_BOT_TOKEN',
+        'TELEGRAM_ALLOWED_CHAT_IDS',
+        'TELEGRAM_WEBHOOK_SECRET',
+        'APP_PUBLIC_URL',
+    ];
+}
+
+function contact_trace_save_manageable_settings(array $settings): void
+{
+    $managedSettings = [];
+
+    foreach (contact_trace_manageable_settings() as $key) {
+        $managedSettings[$key] = trim((string) ($settings[$key] ?? ''));
+    }
+
+    $publicUrl = $managedSettings['APP_PUBLIC_URL'];
+
+    if ($publicUrl !== '' && !filter_var($publicUrl, FILTER_VALIDATE_URL)) {
+        throw new InvalidArgumentException('Please enter a valid public app URL.');
+    }
+
+    $lines = [];
+
+    foreach ($managedSettings as $key => $value) {
+        $lines[] = $key . '=' . contact_trace_encode_env_value($value);
+        putenv($key . '=' . $value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+
+    $result = file_put_contents(contact_trace_env_file_path(), implode(PHP_EOL, $lines) . PHP_EOL, LOCK_EX);
+
+    if ($result === false) {
+        throw new RuntimeException('Unable to save Telegram settings to .env.');
+    }
+}
+
+function contact_trace_encode_env_value(string $value): string
+{
+    if ($value === '') {
+        return '';
+    }
+
+    if (preg_match('/^[A-Za-z0-9_:\/.,@\-]+$/', $value) === 1) {
+        return $value;
+    }
+
+    return '"' . addcslashes($value, "\\\"") . '"';
 }
 
 function contact_trace_database_directory(): string
