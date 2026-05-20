@@ -177,7 +177,7 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
     $draft = contact_trace_find_telegram_add_draft($pdo, $chatId);
 
     if ($draft !== null) {
-        if (str_starts_with($text, '/')) {
+        if (str_starts_with($text, '/') && preg_match('~^/skip(?:@\w+)?$~i', $text) !== 1) {
             return 'You are in the middle of /add. Reply to the current question, send /skip for optional fields, or /cancel.';
         }
 
@@ -234,7 +234,7 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
 function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, array $draft, string $text): string
 {
     $fieldDefinitions = contact_trace_telegram_add_field_definitions();
-    $currentField = (string) ($draft['current_field'] ?? '');
+    $currentField = contact_trace_normalize_telegram_add_field((string) ($draft['current_field'] ?? ''));
 
     if (!isset($fieldDefinitions[$currentField])) {
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
@@ -262,6 +262,15 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     $leadId = contact_trace_add_lead($pdo, $payload);
 
     return 'Lead saved with ID #' . $leadId;
+}
+
+function contact_trace_normalize_telegram_add_field(string $field): string
+{
+    if ($field === 'telegram_handle') {
+        return 'service_offer';
+    }
+
+    return $field;
 }
 
 function contact_trace_parse_add_command(string $payload): array
@@ -300,35 +309,31 @@ function contact_trace_telegram_add_field_definitions(): array
 {
     return [
         'phone_display' => [
-            'prompt' => '1/8 Send the phone number.',
+            'prompt' => '1/7 Send the phone number.',
             'required' => true,
         ],
         'ad_url' => [
-            'prompt' => '2/8 Send the ad URL.',
+            'prompt' => '2/7 Send the ad URL.',
             'required' => true,
         ],
         'owner_name' => [
-            'prompt' => '3/8 Send the owner name, or /skip.',
-            'required' => false,
-        ],
-        'telegram_handle' => [
-            'prompt' => '4/8 Send the Telegram handle, or /skip.',
+            'prompt' => '3/7 Send the owner name, or /skip.',
             'required' => false,
         ],
         'service_offer' => [
-            'prompt' => '5/8 Send the service offered, or /skip.',
+            'prompt' => '4/7 Send the service offered, or /skip.',
             'required' => false,
         ],
         'latest_reply' => [
-            'prompt' => '6/8 Send the latest reply, or /skip.',
+            'prompt' => '5/7 Send the latest reply, or /skip.',
             'required' => false,
         ],
         'notes' => [
-            'prompt' => '7/8 Send notes, or /skip.',
+            'prompt' => '6/7 Send notes, or /skip.',
             'required' => false,
         ],
         'status' => [
-            'prompt' => '8/8 Send the status (`new`, `contacted`, `replied`, `follow-up`, `closed`), or /skip for `contacted`.',
+            'prompt' => '7/7 Send the status (`new`, `contacted`, `replied`, `follow-up`, `closed`), or /skip for `contacted`.',
             'required' => false,
         ],
     ];
