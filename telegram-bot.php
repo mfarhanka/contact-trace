@@ -87,25 +87,41 @@ function contact_trace_find_telegram_add_draft(PDO $pdo, string $chatId): ?array
 function contact_trace_save_telegram_add_draft(PDO $pdo, string $chatId, array $payload, string $currentField): void
 {
     $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
+    $updatedAt = date('c');
 
     if ($payloadJson === false) {
         throw new RuntimeException('Unable to save Telegram draft.');
     }
 
     $statement = $pdo->prepare(
-        'INSERT INTO telegram_add_drafts (chat_id, payload_json, current_field, updated_at)
-         VALUES (:chat_id, :payload_json, :current_field, :updated_at)
-         ON CONFLICT(chat_id) DO UPDATE SET
-            payload_json = excluded.payload_json,
-            current_field = excluded.current_field,
-            updated_at = excluded.updated_at'
+        'UPDATE telegram_add_drafts
+         SET payload_json = :payload_json,
+             current_field = :current_field,
+             updated_at = :updated_at
+         WHERE chat_id = :chat_id'
     );
 
     $statement->execute([
         ':chat_id' => $chatId,
         ':payload_json' => $payloadJson,
         ':current_field' => $currentField,
-        ':updated_at' => date('c'),
+        ':updated_at' => $updatedAt,
+    ]);
+
+    if ($statement->rowCount() > 0) {
+        return;
+    }
+
+    $statement = $pdo->prepare(
+        'INSERT INTO telegram_add_drafts (chat_id, payload_json, current_field, updated_at)
+         VALUES (:chat_id, :payload_json, :current_field, :updated_at)'
+    );
+
+    $statement->execute([
+        ':chat_id' => $chatId,
+        ':payload_json' => $payloadJson,
+        ':current_field' => $currentField,
+        ':updated_at' => $updatedAt,
     ]);
 }
 
