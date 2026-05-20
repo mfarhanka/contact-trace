@@ -146,7 +146,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                     <div class="card shadow-sm h-100">
                         <div class="card-body p-4">
                             <h2 class="h5 mb-1">Add lead</h2>
-                            <p class="text-secondary small mb-4">Store one owner together with the phone, Telegram, and ad link.</p>
+                            <p class="text-secondary small mb-4">Store one owner together with the phone and ad link.</p>
 
                             <form method="post" class="vstack gap-3">
                                 <input type="hidden" name="action" value="add_lead">
@@ -154,11 +154,6 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                 <div>
                                     <label for="owner_name" class="form-label">Owner name</label>
                                     <input id="owner_name" type="text" name="owner_name" class="form-control" placeholder="Optional">
-                                </div>
-
-                                <div>
-                                    <label for="telegram_handle" class="form-label">Telegram</label>
-                                    <input id="telegram_handle" type="text" name="telegram_handle" class="form-control" placeholder="@username or t.me/username">
                                 </div>
 
                                 <div>
