@@ -280,56 +280,33 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                                 <td>
                                                     <a href="<?= escape($lead['ad_url']) ?>" target="_blank" rel="noreferrer">Open ad</a>
                                                 </td>
-                                                <td colspan="5">
-                                                    <form method="post" class="row g-2 align-items-start">
-                                                        <input type="hidden" name="action" value="update_lead">
-                                                        <input type="hidden" name="id" value="<?= (int) $lead['id'] ?>">
-                                                        <input type="hidden" name="search" value="<?= escape($searchTerm) ?>">
-
-                                                        <div class="col-12 col-xl-3">
-                                                            <textarea
-                                                                id="latest_reply_<?= (int) $lead['id'] ?>"
-                                                                name="latest_reply"
-                                                                rows="2"
-                                                                class="form-control form-control-sm"
-                                                                placeholder="Latest reply"
-                                                            ><?= escape($lead['latest_reply']) ?></textarea>
-                                                        </div>
-
-                                                        <div class="col-12 col-xl-3">
-                                                            <textarea
-                                                                id="notes_<?= (int) $lead['id'] ?>"
-                                                                name="notes"
-                                                                rows="2"
-                                                                class="form-control form-control-sm"
-                                                                placeholder="Notes"
-                                                            ><?= escape($lead['notes']) ?></textarea>
-                                                        </div>
-
-                                                        <div class="col-6 col-xl-2">
-                                                            <select id="status_<?= (int) $lead['id'] ?>" name="status" class="form-select form-select-sm">
-                                                                <?php foreach ($statuses as $status): ?>
-                                                                    <option value="<?= escape($status) ?>" <?= $lead['status'] === $status ? 'selected' : '' ?>>
-                                                                        <?= escape(ucwords($status)) ?>
-                                                                    </option>
-                                                                <?php endforeach; ?>
-                                                            </select>
-                                                            <div class="mt-2">
-                                                                <span class="badge <?= status_badge_class($lead['status']) ?>">
-                                                                    <?= escape(ucwords($lead['status'])) ?>
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="col-6 col-xl-2 small text-secondary">
-                                                            <div><?= escape(date('d M Y', strtotime($lead['updated_at']))) ?></div>
-                                                            <div><?= escape(date('h:i A', strtotime($lead['updated_at']))) ?></div>
-                                                        </div>
-
-                                                        <div class="col-12 col-xl-2">
-                                                            <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Update</button>
-                                                        </div>
-                                                    </form>
+                                                <td>
+                                                    <div class="small text-break"><?= escape($lead['latest_reply'] !== '' ? $lead['latest_reply'] : 'No reply yet') ?></div>
+                                                </td>
+                                                <td>
+                                                    <div class="small text-break"><?= escape($lead['notes'] !== '' ? $lead['notes'] : 'No notes') ?></div>
+                                                </td>
+                                                <td>
+                                                    <span class="badge <?= status_badge_class($lead['status']) ?>">
+                                                        <?= escape(ucwords($lead['status'])) ?>
+                                                    </span>
+                                                </td>
+                                                <td class="small text-secondary">
+                                                    <div><?= escape(date('d M Y', strtotime($lead['updated_at']))) ?></div>
+                                                    <div><?= escape(date('h:i A', strtotime($lead['updated_at']))) ?></div>
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-outline-secondary btn-sm"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#editLeadModal"
+                                                        data-lead-id="<?= (int) $lead['id'] ?>"
+                                                        data-lead-name="<?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?>"
+                                                        data-latest-reply="<?= escape($lead['latest_reply']) ?>"
+                                                        data-notes="<?= escape($lead['notes']) ?>"
+                                                        data-status="<?= escape($lead['status']) ?>"
+                                                    >Edit</button>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -358,5 +335,95 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
         </div>
     </div>
 </div>
+<div class="modal fade" id="editLeadModal" tabindex="-1" aria-labelledby="editLeadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5" id="editLeadModalLabel">Edit lead</h2>
+                        <p class="text-secondary small mb-0" id="editLeadModalDescription">Update the latest reply, notes, and status for this lead.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update_lead">
+                    <input type="hidden" name="id" id="edit_lead_id" value="0">
+                    <input type="hidden" name="search" value="<?= escape($searchTerm) ?>">
+
+                    <div class="mb-3">
+                        <div class="small text-secondary">Editing</div>
+                        <div class="fw-semibold" id="edit_lead_name">Lead</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_latest_reply" class="form-label">Latest reply</label>
+                        <textarea
+                            id="edit_latest_reply"
+                            name="latest_reply"
+                            rows="4"
+                            class="form-control"
+                            placeholder="Latest reply"
+                        ></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_notes" class="form-label">Notes</label>
+                        <textarea
+                            id="edit_notes"
+                            name="notes"
+                            rows="5"
+                            class="form-control"
+                            placeholder="Notes"
+                        ></textarea>
+                    </div>
+
+                    <div>
+                        <label for="edit_status" class="form-label">Status</label>
+                        <select id="edit_status" name="status" class="form-select">
+                            <?php foreach ($statuses as $status): ?>
+                                <option value="<?= escape($status) ?>"><?= escape(ucwords($status)) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script
+    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+    crossorigin="anonymous"
+></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var editLeadModal = document.getElementById('editLeadModal');
+
+    if (!editLeadModal) {
+        return;
+    }
+
+    editLeadModal.addEventListener('show.bs.modal', function (event) {
+        var trigger = event.relatedTarget;
+
+        if (!trigger) {
+            return;
+        }
+
+        document.getElementById('edit_lead_id').value = trigger.getAttribute('data-lead-id') || '0';
+        document.getElementById('edit_lead_name').textContent = trigger.getAttribute('data-lead-name') || 'Lead';
+        document.getElementById('edit_latest_reply').value = trigger.getAttribute('data-latest-reply') || '';
+        document.getElementById('edit_notes').value = trigger.getAttribute('data-notes') || '';
+        document.getElementById('edit_status').value = trigger.getAttribute('data-status') || 'contacted';
+    });
+});
+</script>
 </body>
 </html>
