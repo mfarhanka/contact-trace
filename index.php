@@ -16,6 +16,7 @@ $pdo->exec(
     'CREATE TABLE IF NOT EXISTS leads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         owner_name TEXT NOT NULL DEFAULT \'\',
+        telegram_handle TEXT NOT NULL DEFAULT \'\',
         phone_display TEXT NOT NULL,
         phone_normalized TEXT NOT NULL,
         ad_url TEXT NOT NULL,
@@ -27,6 +28,13 @@ $pdo->exec(
         updated_at TEXT NOT NULL
     )'
 );
+
+$columns = $pdo->query('PRAGMA table_info(leads)')->fetchAll();
+$columnNames = array_column($columns, 'name');
+
+if (!in_array('telegram_handle', $columnNames, true)) {
+    $pdo->exec("ALTER TABLE leads ADD COLUMN telegram_handle TEXT NOT NULL DEFAULT ''");
+}
 
 $message = '';
 $messageType = 'success';
@@ -40,6 +48,17 @@ function escape(string $value): string
 function normalize_phone(string $phone): string
 {
     return preg_replace('/\D+/', '', $phone) ?? '';
+}
+
+function telegram_link(string $telegramHandle): string
+{
+    $normalizedHandle = ltrim(trim($telegramHandle), '@');
+
+    if ($normalizedHandle === '') {
+        return '';
+    }
+
+    return 'https://t.me/' . rawurlencode($normalizedHandle);
 }
 
 function status_badge_class(string $status): string
@@ -74,6 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add_lead') {
         $ownerName = trim((string) ($_POST['owner_name'] ?? ''));
+        $telegramHandle = trim((string) ($_POST['telegram_handle'] ?? ''));
         $phoneDisplay = trim((string) ($_POST['phone_display'] ?? ''));
         $phoneNormalized = normalize_phone($phoneDisplay);
         $adUrl = trim((string) ($_POST['ad_url'] ?? ''));
@@ -99,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $statement = $pdo->prepare(
             'INSERT INTO leads (
                 owner_name,
+                telegram_handle,
                 phone_display,
                 phone_normalized,
                 ad_url,
@@ -110,6 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 updated_at
             ) VALUES (
                 :owner_name,
+                :telegram_handle,
                 :phone_display,
                 :phone_normalized,
                 :ad_url,
@@ -124,6 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $statement->execute([
             ':owner_name' => $ownerName,
+            ':telegram_handle' => $telegramHandle,
             ':phone_display' => $phoneDisplay,
             ':phone_normalized' => $phoneNormalized,
             ':ad_url' => $adUrl,
@@ -186,6 +209,7 @@ if ($searchTerm !== '') {
          FROM leads
          WHERE phone_display LIKE :like_term
             OR phone_normalized LIKE :search_digits
+                OR telegram_handle LIKE :like_term
             OR owner_name LIKE :like_term
             OR ad_url LIKE :like_term
             OR notes LIKE :like_term
@@ -245,7 +269,7 @@ $leads = $statement->fetchAll();
                     <div class="card shadow-sm h-100">
                         <div class="card-body p-4">
                             <h2 class="h5 mb-1">Add lead</h2>
-                            <p class="text-secondary small mb-4">Store one owner together with the ad link.</p>
+                            <p class="text-secondary small mb-4">Store one owner together with the phone, Telegram, and ad link.</p>
 
                             <form method="post" class="vstack gap-3">
                                 <input type="hidden" name="action" value="add_lead">
@@ -253,6 +277,11 @@ $leads = $statement->fetchAll();
                                 <div>
                                     <label for="owner_name" class="form-label">Owner name</label>
                                     <input id="owner_name" type="text" name="owner_name" class="form-control" placeholder="Optional">
+                                </div>
+
+                                <div>
+                                    <label for="telegram_handle" class="form-label">Telegram</label>
+                                    <input id="telegram_handle" type="text" name="telegram_handle" class="form-control" placeholder="@username or t.me/username">
                                 </div>
 
                                 <div>
@@ -303,7 +332,7 @@ $leads = $statement->fetchAll();
                             <div class="d-flex flex-column flex-md-row justify-content-md-between gap-3 mb-3">
                                 <div>
                                     <h2 class="h5 mb-1">Search leads</h2>
-                                    <p class="text-secondary small mb-0">Search by phone number, owner name, note, or ad link.</p>
+                                    <p class="text-secondary small mb-0">Search by phone number, Telegram, owner name, note, or ad link.</p>
                                 </div>
 
                                 <form method="get" class="row g-2">
@@ -312,7 +341,7 @@ $leads = $statement->fetchAll();
                                             type="search"
                                             name="search"
                                             class="form-control"
-                                            placeholder="Search phone number"
+                                            placeholder="Search phone or Telegram"
                                             value="<?= escape($searchTerm) ?>"
                                         >
                                     </div>
@@ -355,6 +384,13 @@ $leads = $statement->fetchAll();
                                                 <td>
                                                     <div class="fw-semibold"><?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?></div>
                                                     <div class="text-secondary small"><?= escape($lead['phone_display']) ?></div>
+                                                    <?php if ($lead['telegram_handle'] !== ''): ?>
+                                                        <div class="small">
+                                                            <a href="<?= escape(telegram_link($lead['telegram_handle'])) ?>" target="_blank" rel="noreferrer">
+                                                                <?= escape($lead['telegram_handle']) ?>
+                                                            </a>
+                                                        </div>
+                                                    <?php endif; ?>
                                                     <div class="text-secondary small"><?= escape($lead['service_offer']) !== '' ? escape($lead['service_offer']) : 'No service set' ?></div>
                                                 </td>
                                                 <td>
