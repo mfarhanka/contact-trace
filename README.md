@@ -15,6 +15,13 @@ Simple PHP + SQLite tool to track outreach leads from listings like Mudah.
 2. Open `http://localhost/contact-trace/` in your browser.
 3. The SQLite database is created automatically in the `data` folder on first load.
 
+## Admin login
+
+1. Open `http://localhost/contact-trace/admin.php`.
+2. On the first visit, create the first admin username and password to secure the page.
+3. On later visits, log in with that admin account before changing Telegram settings.
+4. After logging in, use the same admin page to create another admin user when you want to share access.
+
 ## Telegram bot
 
 You can control the same leads database through a Telegram bot webhook.

@@ -3,11 +3,12 @@ declare(strict_types=1);
 
 require __DIR__ . DIRECTORY_SEPARATOR . 'contact_trace.php';
 
+session_start();
+
+$pdo = contact_trace_get_pdo();
+
 $message = '';
 $messageType = 'success';
-$telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
-$telegramAllowedChatIds = contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS');
-$publicBaseUrl = contact_trace_env('APP_PUBLIC_URL');
 
 function escape(string $value): string
 {
@@ -21,6 +22,42 @@ function redirect_with_feedback(string $message, string $type): never
         'type' => $type,
     ]));
     exit;
+}
+
+function login_admin_user(array $user): void
+{
+    session_regenerate_id(true);
+    $_SESSION['admin_user_id'] = (int) $user['id'];
+}
+
+function logout_admin_user(): void
+{
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], (bool) $params['secure'], (bool) $params['httponly']);
+    }
+
+    session_destroy();
+}
+
+function current_admin_user(PDO $pdo): ?array
+{
+    $userId = (int) ($_SESSION['admin_user_id'] ?? 0);
+
+    if ($userId < 1) {
+        return null;
+    }
+
+    $user = contact_trace_find_admin_user_by_id($pdo, $userId);
+
+    if ($user === null) {
+        unset($_SESSION['admin_user_id']);
+        return null;
+    }
+
+    return $user;
 }
 
 function mask_secret(string $value): string
@@ -97,8 +134,85 @@ if (isset($_GET['message'])) {
     $messageType = $_GET['type'] === 'error' ? 'error' : 'success';
 }
 
+$adminUserCount = contact_trace_count_admin_users($pdo);
+$currentAdminUser = current_admin_user($pdo);
+$isAuthenticated = $currentAdminUser !== null;
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = $_POST['action'] ?? '';
+
+    if ($action === 'logout') {
+        logout_admin_user();
+        redirect_with_feedback('Logged out.', 'success');
+    }
+
+    if ($adminUserCount === 0) {
+        if ($action !== 'setup_admin_user') {
+            redirect_with_feedback('Create the first admin account to secure this page.', 'error');
+        }
+
+        $username = trim((string) ($_POST['username'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+        if ($password !== $confirmPassword) {
+            redirect_with_feedback('Passwords do not match.', 'error');
+        }
+
+        try {
+            $userId = contact_trace_create_admin_user($pdo, $username, $password);
+            $createdUser = contact_trace_find_admin_user_by_id($pdo, $userId);
+
+            if ($createdUser === null) {
+                throw new RuntimeException('Admin user was created but could not be loaded.');
+            }
+
+            login_admin_user($createdUser);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback('Admin account created. You are now logged in.', 'success');
+    }
+
+    if (!$isAuthenticated) {
+        if ($action !== 'login_admin') {
+            redirect_with_feedback('Please log in first.', 'error');
+        }
+
+        $user = contact_trace_verify_admin_credentials(
+            $pdo,
+            trim((string) ($_POST['username'] ?? '')),
+            (string) ($_POST['password'] ?? '')
+        );
+
+        if ($user === null) {
+            redirect_with_feedback('Invalid username or password.', 'error');
+        }
+
+        login_admin_user($user);
+        redirect_with_feedback('Logged in successfully.', 'success');
+    }
+
+    if ($action === 'create_admin_user') {
+        $username = trim((string) ($_POST['username'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+        if ($password !== $confirmPassword) {
+            redirect_with_feedback('New admin passwords do not match.', 'error');
+        }
+
+        try {
+            contact_trace_create_admin_user($pdo, $username, $password);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback('New admin user added.', 'success');
+    }
+
+    $telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
 
     if ($action === 'save_telegram_settings' || $action === 'save_and_register_telegram_webhook') {
         $submittedToken = trim((string) ($_POST['telegram_bot_token'] ?? ''));
@@ -135,6 +249,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     }
 }
 
+$telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
+$telegramAllowedChatIds = contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS');
+$publicBaseUrl = contact_trace_env('APP_PUBLIC_URL');
 $telegramWebhookUrl = suggested_telegram_webhook_url();
 $telegramBotReady = $telegramBotToken !== '';
 $isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(current_request_host(), 'localhost') === false && current_request_host() !== '127.0.0.1';
@@ -160,12 +277,27 @@ $maskedBotToken = mask_secret($telegramBotToken);
     <div class="row justify-content-center mb-4">
         <div class="col-12 col-xl-8">
             <div class="border rounded bg-white shadow-sm p-4">
-                <div class="d-flex justify-content-between align-items-start gap-3">
+                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                     <div>
                         <h1 class="h2 mb-2">Telegram Admin</h1>
-                        <p class="text-secondary mb-0">Save Telegram bot settings and register the webhook from a dedicated admin page.</p>
+                        <p class="text-secondary mb-0">
+                            <?php if ($adminUserCount === 0): ?>
+                                Create the first admin account to lock this page before managing Telegram settings.
+                            <?php elseif (!$isAuthenticated): ?>
+                                Sign in with an admin username and password to manage Telegram settings.
+                            <?php else: ?>
+                                Signed in as <strong><?= escape((string) $currentAdminUser['username']) ?></strong>. Manage Telegram settings and create more admin users here.
+                            <?php endif; ?>
+                        </p>
                     </div>
-                    <a href="index.php" class="btn btn-outline-secondary">Back to leads</a>
+                    <div class="d-flex gap-2">
+                        <a href="index.php" class="btn btn-outline-secondary">Back to leads</a>
+                        <?php if ($isAuthenticated): ?>
+                            <form method="post" class="d-inline">
+                                <button type="submit" name="action" value="logout" class="btn btn-outline-danger">Logout</button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
@@ -179,88 +311,176 @@ $maskedBotToken = mask_secret($telegramBotToken);
                 </div>
             <?php endif; ?>
 
-            <div class="card shadow-sm">
-                <div class="card-body p-4">
-                    <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
-                        <div>
-                            <h2 class="h5 mb-1">Bot settings</h2>
-                            <p class="text-secondary small mb-0">Admin can save the bot token here and register the public webhook for <strong>telegram-bot.php</strong>.</p>
-                        </div>
-                        <div class="small text-secondary">
-                            <div>Bot token: <?= escape($maskedBotToken) ?></div>
-                            <div>Allowed chat IDs: <?= escape($telegramAllowedChatIds !== '' ? $telegramAllowedChatIds : 'not restricted') ?></div>
-                        </div>
-                    </div>
+            <?php if ($adminUserCount === 0): ?>
+                <div class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-1">Create first admin</h2>
+                        <p class="text-secondary small mb-4">This one-time setup protects admin.php with a username and password stored securely in the app database.</p>
 
-                    <form method="post" class="row g-3 align-items-end">
-                        <div class="col-12 col-lg-6">
-                            <label for="telegram_bot_token" class="form-label">Bot token</label>
-                            <input
-                                id="telegram_bot_token"
-                                type="password"
-                                name="telegram_bot_token"
-                                class="form-control"
-                                placeholder="<?= $telegramBotReady ? 'Leave blank to keep current token' : '123456:ABC-DEF...' ?>"
-                                autocomplete="off"
-                            >
-                            <div class="form-text">Leave blank to keep the current token.</div>
-                        </div>
-                        <div class="col-12 col-lg-6">
-                            <label for="telegram_allowed_chat_ids" class="form-label">Allowed chat IDs</label>
-                            <input
-                                id="telegram_allowed_chat_ids"
-                                type="text"
-                                name="telegram_allowed_chat_ids"
-                                class="form-control"
-                                value="<?= escape($telegramAllowedChatIds) ?>"
-                                placeholder="123456789,-1001234567890"
-                            >
-                            <div class="form-text">Optional comma-separated chat IDs allowed to use the bot.</div>
-                        </div>
-                        <div class="col-12 col-lg-6">
-                            <label for="app_public_url" class="form-label">Public app URL</label>
-                            <input
-                                id="app_public_url"
-                                type="url"
-                                name="app_public_url"
-                                class="form-control"
-                                value="<?= escape($publicBaseUrl) ?>"
-                                placeholder="https://your-domain/contact-trace"
-                            >
-                            <div class="form-text">Used to prefill the webhook URL below.</div>
-                        </div>
-                        <div class="col-12 col-lg-8">
-                            <label for="webhook_url" class="form-label">Webhook URL</label>
-                            <input
-                                id="webhook_url"
-                                type="url"
-                                name="webhook_url"
-                                class="form-control"
-                                value="<?= escape($telegramWebhookUrl) ?>"
-                                placeholder="https://your-domain/contact-trace/telegram-bot.php"
-                                required
-                            >
-                            <div class="form-text">
-                                Telegram requires a public HTTPS URL. <?= $isSuggestedWebhookPublic ? 'The suggested URL looks public.' : 'The suggested URL is local, so replace it with your public domain or tunnel URL.' ?>
-                                <?= $publicBaseUrl === '' ? 'Set the public app URL here to prefill the webhook URL automatically.' : '' ?>
+                        <form method="post" class="row g-3">
+                            <input type="hidden" name="action" value="setup_admin_user">
+
+                            <div class="col-12 col-md-6">
+                                <label for="setup_username" class="form-label">Username</label>
+                                <input id="setup_username" type="text" name="username" class="form-control" placeholder="admin" autocomplete="username" required>
+                                <div class="form-text">Use 3 to 32 lowercase letters, numbers, dot, dash, or underscore.</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="setup_password" class="form-label">Password</label>
+                                <input id="setup_password" type="password" name="password" class="form-control" autocomplete="new-password" required>
+                                <div class="form-text">Minimum 8 characters.</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="setup_confirm_password" class="form-label">Confirm password</label>
+                                <input id="setup_confirm_password" type="password" name="confirm_password" class="form-control" autocomplete="new-password" required>
+                            </div>
+                            <div class="col-12 d-grid d-md-flex justify-content-md-end">
+                                <button type="submit" class="btn btn-primary">Create admin account</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            <?php elseif (!$isAuthenticated): ?>
+                <div class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-1">Admin login</h2>
+                        <p class="text-secondary small mb-4">Only authenticated admin users can access Telegram settings.</p>
+
+                        <form method="post" class="row g-3">
+                            <input type="hidden" name="action" value="login_admin">
+
+                            <div class="col-12 col-md-6">
+                                <label for="login_username" class="form-label">Username</label>
+                                <input id="login_username" type="text" name="username" class="form-control" autocomplete="username" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label for="login_password" class="form-label">Password</label>
+                                <input id="login_password" type="password" name="password" class="form-control" autocomplete="current-password" required>
+                            </div>
+                            <div class="col-12 d-grid d-md-flex justify-content-md-end">
+                                <button type="submit" class="btn btn-primary">Log in</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                            <div>
+                                <h2 class="h5 mb-1">Add admin user</h2>
+                                <p class="text-secondary small mb-0">Create another username and password so someone else can manage the admin page too.</p>
+                            </div>
+                            <div class="small text-secondary">
+                                <div>Existing admins: <?= $adminUserCount ?></div>
                             </div>
                         </div>
-                        <div class="col-6 col-lg-2 d-grid">
-                            <button type="submit" name="action" value="save_telegram_settings" class="btn btn-outline-secondary">Save settings</button>
-                        </div>
-                        <div class="col-6 col-lg-2 d-grid">
-                            <button type="submit" name="action" value="save_and_register_telegram_webhook" class="btn btn-outline-primary">Save + register</button>
-                        </div>
-                        <div class="col-12 col-lg-2 d-grid">
-                            <button type="submit" name="action" value="check_telegram_webhook" class="btn btn-outline-secondary" <?= $telegramBotReady ? '' : 'disabled' ?>>Check status</button>
-                        </div>
-                    </form>
 
-                    <?php if (!$telegramBotReady): ?>
-                        <p class="small text-danger mb-0 mt-3">Save a bot token here first, then use Save + register to register the webhook.</p>
-                    <?php endif; ?>
+                        <form method="post" class="row g-3 align-items-end">
+                            <input type="hidden" name="action" value="create_admin_user">
+
+                            <div class="col-12 col-lg-4">
+                                <label for="new_admin_username" class="form-label">Username</label>
+                                <input id="new_admin_username" type="text" name="username" class="form-control" autocomplete="off" required>
+                            </div>
+                            <div class="col-12 col-lg-3">
+                                <label for="new_admin_password" class="form-label">Password</label>
+                                <input id="new_admin_password" type="password" name="password" class="form-control" autocomplete="new-password" required>
+                            </div>
+                            <div class="col-12 col-lg-3">
+                                <label for="new_admin_confirm_password" class="form-label">Confirm password</label>
+                                <input id="new_admin_confirm_password" type="password" name="confirm_password" class="form-control" autocomplete="new-password" required>
+                            </div>
+                            <div class="col-12 col-lg-2 d-grid">
+                                <button type="submit" class="btn btn-outline-primary">Add user</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-            </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                            <div>
+                                <h2 class="h5 mb-1">Bot settings</h2>
+                                <p class="text-secondary small mb-0">Admin can save the bot token here and register the public webhook for <strong>telegram-bot.php</strong>.</p>
+                            </div>
+                            <div class="small text-secondary">
+                                <div>Bot token: <?= escape($maskedBotToken) ?></div>
+                                <div>Allowed chat IDs: <?= escape($telegramAllowedChatIds !== '' ? $telegramAllowedChatIds : 'not restricted') ?></div>
+                            </div>
+                        </div>
+
+                        <form method="post" class="row g-3 align-items-end">
+                            <div class="col-12 col-lg-6">
+                                <label for="telegram_bot_token" class="form-label">Bot token</label>
+                                <input
+                                    id="telegram_bot_token"
+                                    type="password"
+                                    name="telegram_bot_token"
+                                    class="form-control"
+                                    placeholder="<?= $telegramBotReady ? 'Leave blank to keep current token' : '123456:ABC-DEF...' ?>"
+                                    autocomplete="off"
+                                >
+                                <div class="form-text">Leave blank to keep the current token.</div>
+                            </div>
+                            <div class="col-12 col-lg-6">
+                                <label for="telegram_allowed_chat_ids" class="form-label">Allowed chat IDs</label>
+                                <input
+                                    id="telegram_allowed_chat_ids"
+                                    type="text"
+                                    name="telegram_allowed_chat_ids"
+                                    class="form-control"
+                                    value="<?= escape($telegramAllowedChatIds) ?>"
+                                    placeholder="123456789,-1001234567890"
+                                >
+                                <div class="form-text">Optional comma-separated chat IDs allowed to use the bot.</div>
+                            </div>
+                            <div class="col-12 col-lg-6">
+                                <label for="app_public_url" class="form-label">Public app URL</label>
+                                <input
+                                    id="app_public_url"
+                                    type="url"
+                                    name="app_public_url"
+                                    class="form-control"
+                                    value="<?= escape($publicBaseUrl) ?>"
+                                    placeholder="https://your-domain/contact-trace"
+                                >
+                                <div class="form-text">Used to prefill the webhook URL below.</div>
+                            </div>
+                            <div class="col-12 col-lg-8">
+                                <label for="webhook_url" class="form-label">Webhook URL</label>
+                                <input
+                                    id="webhook_url"
+                                    type="url"
+                                    name="webhook_url"
+                                    class="form-control"
+                                    value="<?= escape($telegramWebhookUrl) ?>"
+                                    placeholder="https://your-domain/contact-trace/telegram-bot.php"
+                                    required
+                                >
+                                <div class="form-text">
+                                    Telegram requires a public HTTPS URL. <?= $isSuggestedWebhookPublic ? 'The suggested URL looks public.' : 'The suggested URL is local, so replace it with your public domain or tunnel URL.' ?>
+                                    <?= $publicBaseUrl === '' ? 'Set the public app URL here to prefill the webhook URL automatically.' : '' ?>
+                                </div>
+                            </div>
+                            <div class="col-6 col-lg-2 d-grid">
+                                <button type="submit" name="action" value="save_telegram_settings" class="btn btn-outline-secondary">Save settings</button>
+                            </div>
+                            <div class="col-6 col-lg-2 d-grid">
+                                <button type="submit" name="action" value="save_and_register_telegram_webhook" class="btn btn-outline-primary">Save + register</button>
+                            </div>
+                            <div class="col-12 col-lg-2 d-grid">
+                                <button type="submit" name="action" value="check_telegram_webhook" class="btn btn-outline-secondary" <?= $telegramBotReady ? '' : 'disabled' ?>>Check status</button>
+                            </div>
+                        </form>
+
+                        <?php if (!$telegramBotReady): ?>
+                            <p class="small text-danger mb-0 mt-3">Save a bot token here first, then use Save + register to register the webhook.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

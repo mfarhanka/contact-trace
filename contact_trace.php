@@ -156,6 +156,18 @@ function contact_trace_ensure_schema(PDO $pdo): void
     );
 
     $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS admin_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )'
+    );
+
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_username ON admin_users (username)');
+
+    $pdo->exec(
         'CREATE TABLE IF NOT EXISTS telegram_add_drafts (
             chat_id TEXT PRIMARY KEY,
             payload_json TEXT NOT NULL DEFAULT \'{}\',
@@ -175,6 +187,113 @@ function contact_trace_ensure_schema(PDO $pdo): void
 function contact_trace_allowed_statuses(): array
 {
     return ['new', 'contacted', 'replied', 'follow-up', 'closed'];
+}
+
+function contact_trace_normalize_admin_username(string $username): string
+{
+    return strtolower(trim($username));
+}
+
+function contact_trace_validate_admin_username(string $username): string
+{
+    $normalizedUsername = contact_trace_normalize_admin_username($username);
+
+    if ($normalizedUsername === '' || preg_match('/^[a-z0-9_.-]{3,32}$/', $normalizedUsername) !== 1) {
+        throw new InvalidArgumentException('Username must be 3 to 32 characters and use only letters, numbers, dot, dash, or underscore.');
+    }
+
+    return $normalizedUsername;
+}
+
+function contact_trace_validate_admin_password(string $password): string
+{
+    $cleanPassword = trim($password);
+
+    if (strlen($cleanPassword) < 8) {
+        throw new InvalidArgumentException('Password must be at least 8 characters long.');
+    }
+
+    return $cleanPassword;
+}
+
+function contact_trace_count_admin_users(PDO $pdo): int
+{
+    $count = $pdo->query('SELECT COUNT(*) FROM admin_users')->fetchColumn();
+
+    return (int) $count;
+}
+
+function contact_trace_find_admin_user_by_id(PDO $pdo, int $id): ?array
+{
+    $statement = $pdo->prepare('SELECT * FROM admin_users WHERE id = :id LIMIT 1');
+    $statement->execute([':id' => $id]);
+    $user = $statement->fetch();
+
+    return is_array($user) ? $user : null;
+}
+
+function contact_trace_find_admin_user_by_username(PDO $pdo, string $username): ?array
+{
+    $statement = $pdo->prepare('SELECT * FROM admin_users WHERE username = :username LIMIT 1');
+    $statement->execute([':username' => contact_trace_normalize_admin_username($username)]);
+    $user = $statement->fetch();
+
+    return is_array($user) ? $user : null;
+}
+
+function contact_trace_create_admin_user(PDO $pdo, string $username, string $password): int
+{
+    $normalizedUsername = contact_trace_validate_admin_username($username);
+    $validatedPassword = contact_trace_validate_admin_password($password);
+
+    if (contact_trace_find_admin_user_by_username($pdo, $normalizedUsername) !== null) {
+        throw new InvalidArgumentException('That username already exists.');
+    }
+
+    $passwordHash = password_hash($validatedPassword, PASSWORD_DEFAULT);
+
+    if (!is_string($passwordHash) || $passwordHash === '') {
+        throw new RuntimeException('Unable to secure the password.');
+    }
+
+    $timestamp = date('c');
+    $statement = $pdo->prepare(
+        'INSERT INTO admin_users (
+            username,
+            password_hash,
+            created_at,
+            updated_at
+        ) VALUES (
+            :username,
+            :password_hash,
+            :created_at,
+            :updated_at
+        )'
+    );
+
+    $statement->execute([
+        ':username' => $normalizedUsername,
+        ':password_hash' => $passwordHash,
+        ':created_at' => $timestamp,
+        ':updated_at' => $timestamp,
+    ]);
+
+    return (int) $pdo->lastInsertId();
+}
+
+function contact_trace_verify_admin_credentials(PDO $pdo, string $username, string $password): ?array
+{
+    $user = contact_trace_find_admin_user_by_username($pdo, $username);
+
+    if ($user === null) {
+        return null;
+    }
+
+    if (!password_verify($password, (string) ($user['password_hash'] ?? ''))) {
+        return null;
+    }
+
+    return $user;
 }
 
 function contact_trace_normalize_phone(string $phone): string
