@@ -37,7 +37,7 @@ You can control the same leads database through a Telegram bot webhook.
 	- `/search keyword`
 	- `/delete 12`
 	- `/add` to answer one field at a time
-	- `/add 012-3456789 | https://example.com/ad | Ali | @ali_owner | Aircond service | Interested | Call Friday | contacted`
+	- `/add https://example.com/ad | 012-3456789 | Ali | @ali_owner | Aircond service | Interested | Call Friday | contacted`
 	- `/cancel` to stop an in-progress guided add
 
 Use `-` or `/skip` for any optional empty field in `/add`.

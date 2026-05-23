@@ -279,14 +279,14 @@ function contact_trace_parse_add_command(string $payload): array
     );
 
     if (count($parts) < 2) {
-        return [null, 'Add needs at least phone and ad URL.'];
+        return [null, 'Add needs at least ad URL and phone number.'];
     }
 
     $parts = array_pad($parts, 8, '');
 
     $input = [
-        'phone_display' => $parts[0],
-        'ad_url' => $parts[1],
+        'ad_url' => $parts[0],
+        'phone_display' => $parts[1],
         'owner_name' => contact_trace_optional_part($parts[2]),
         'telegram_handle' => contact_trace_optional_part($parts[3]),
         'service_offer' => contact_trace_optional_part($parts[4]),
@@ -306,12 +306,12 @@ function contact_trace_optional_part(string $value): string
 function contact_trace_telegram_add_field_definitions(): array
 {
     return [
-        'phone_display' => [
-            'prompt' => '1/3 Send the contact number.',
+        'ad_url' => [
+            'prompt' => '1/3 Send the ad URL.',
             'required' => true,
         ],
-        'ad_url' => [
-            'prompt' => '2/3 Send the ad URL.',
+        'phone_display' => [
+            'prompt' => '2/3 Send the contact number.',
             'required' => true,
         ],
         'owner_name' => [
@@ -471,7 +471,7 @@ function contact_trace_help_text(): string
         '/delete 12',
         '/add',
         '/cancel',
-        '/add phone | ad_url | owner',
+        '/add ad_url | phone | owner',
         '',
         'Use /add for step-by-step entry.',
         'Use - or /skip for the optional owner name.',
@@ -486,9 +486,9 @@ function contact_trace_add_usage_text(): string
         'Starts step-by-step entry in Telegram.',
         '',
         'Or send everything in one line:',
-        '/add 012-3456789 | https://example.com/ad | Ali',
+        '/add https://example.com/ad | 012-3456789 | Ali',
         '',
-        'Phone number and ad URL are required.',
+        'Ad URL and phone number are required.',
         'Owner name is optional.',
         'Use - or /skip for the owner name if you want to leave it empty.',
     ]);
