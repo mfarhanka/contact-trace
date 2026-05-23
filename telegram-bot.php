@@ -174,10 +174,7 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
                 $input = $draftPayload;
             }
 
-            $leadId = contact_trace_add_lead($pdo, $input);
-            $lead = contact_trace_find_lead($pdo, $leadId);
-
-            return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+            return contact_trace_telegram_save_lead($pdo, $chatId, $input);
         }
 
         $firstField = contact_trace_telegram_add_first_field();
@@ -256,10 +253,7 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     if (!isset($fieldDefinitions[$currentField])) {
         if (($payload['phone_display'] ?? '') !== '' && ($payload['ad_url'] ?? '') !== '') {
             contact_trace_delete_telegram_add_draft($pdo, $chatId);
-            $leadId = contact_trace_add_lead($pdo, $payload);
-            $lead = contact_trace_find_lead($pdo, $leadId);
-
-            return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+            return contact_trace_telegram_save_lead($pdo, $chatId, $payload);
         }
 
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
@@ -279,10 +273,7 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
 
         if (($payload['phone_display'] ?? '') !== '') {
             contact_trace_delete_telegram_add_draft($pdo, $chatId);
-            $leadId = contact_trace_add_lead($pdo, $payload);
-            $lead = contact_trace_find_lead($pdo, $leadId);
-
-            return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+            return contact_trace_telegram_save_lead($pdo, $chatId, $payload);
         }
 
         contact_trace_save_telegram_add_draft($pdo, $chatId, $payload, 'phone_display');
@@ -296,20 +287,14 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     if (is_array($value) && (($value['__save_now'] ?? false) === true)) {
         unset($value['__save_now']);
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
-        $leadId = contact_trace_add_lead($pdo, $value);
-        $lead = contact_trace_find_lead($pdo, $leadId);
-
-        return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+        return contact_trace_telegram_save_lead($pdo, $chatId, $value);
     }
 
     $payload[$currentField] = $value;
 
     if ($currentField === 'phone_display' && ($payload['owner_name'] ?? '') !== '') {
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
-        $leadId = contact_trace_add_lead($pdo, $payload);
-        $lead = contact_trace_find_lead($pdo, $leadId);
-
-        return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+        return contact_trace_telegram_save_lead($pdo, $chatId, $payload);
     }
 
     $nextField = contact_trace_telegram_add_next_field($currentField);
@@ -321,10 +306,7 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     }
 
     contact_trace_delete_telegram_add_draft($pdo, $chatId);
-    $leadId = contact_trace_add_lead($pdo, $payload);
-    $lead = contact_trace_find_lead($pdo, $leadId);
-
-    return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+    return contact_trace_telegram_save_lead($pdo, $chatId, $payload);
 }
 
 function contact_trace_parse_add_command(string $payload): array
@@ -422,6 +404,35 @@ function contact_trace_telegram_fill_from_ad_url(array $payload): array
     }
 
     return $payload;
+}
+
+function contact_trace_telegram_save_lead(PDO $pdo, string $chatId, array $payload): string
+{
+    try {
+        $leadId = contact_trace_add_lead($pdo, $payload);
+    } catch (InvalidArgumentException $exception) {
+        $adUrl = trim((string) ($payload['ad_url'] ?? ''));
+        $phoneDisplay = trim((string) ($payload['phone_display'] ?? ''));
+
+        if (
+            $exception->getMessage() === 'Phone number is required. Leave it blank only when the app can read it from a supported ad link.'
+            && $adUrl !== ''
+            && $phoneDisplay === ''
+        ) {
+            contact_trace_save_telegram_add_draft($pdo, $chatId, $payload, 'phone_display');
+
+            return implode("\n\n", [
+                'I saved the ad URL first, but could not read the contact number automatically.',
+                contact_trace_telegram_add_prompt('phone_display'),
+            ]);
+        }
+
+        throw $exception;
+    }
+
+    $lead = contact_trace_find_lead($pdo, $leadId);
+
+    return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
 }
 
 function contact_trace_telegram_add_first_field(): string
