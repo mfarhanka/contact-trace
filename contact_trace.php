@@ -69,6 +69,17 @@ function contact_trace_manageable_settings(): array
     ];
 }
 
+function contact_trace_current_manageable_settings(): array
+{
+    $settings = [];
+
+    foreach (contact_trace_manageable_settings() as $key) {
+        $settings[$key] = contact_trace_env($key);
+    }
+
+    return $settings;
+}
+
 function contact_trace_save_manageable_settings(array $settings): void
 {
     $managedSettings = [];

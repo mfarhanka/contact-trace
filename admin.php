@@ -129,6 +129,43 @@ function telegram_webhook_status_summary(array $info): string
     return implode(' ', $parts);
 }
 
+function suggested_whatsapp_dashboard_url(): string
+{
+    $bridgeUrl = rtrim(contact_trace_env('WHATSAPP_BRIDGE_URL'), '/');
+
+    if ($bridgeUrl === '') {
+        return '';
+    }
+
+    $token = contact_trace_env('WHATSAPP_BRIDGE_TOKEN');
+
+    return $token !== '' ? $bridgeUrl . '/?token=' . rawurlencode($token) : $bridgeUrl . '/';
+}
+
+function whatsapp_bridge_status_summary(array $info): string
+{
+    $state = trim((string) ($info['state'] ?? 'unknown'));
+    $clientId = trim((string) ($info['clientId'] ?? ''));
+    $lastError = trim((string) ($info['lastError'] ?? ''));
+    $parts = ['Bridge state: ' . ($state !== '' ? $state : 'unknown') . '.'];
+
+    if (($info['connected'] ?? false) === true) {
+        $parts[] = 'WhatsApp is connected.';
+    } elseif (($info['qrAvailable'] ?? false) === true) {
+        $parts[] = 'QR is ready to scan.';
+    }
+
+    if ($clientId !== '') {
+        $parts[] = 'Connected account: ' . $clientId . '.';
+    }
+
+    if ($lastError !== '') {
+        $parts[] = 'Last error: ' . $lastError . '.';
+    }
+
+    return implode(' ', $parts);
+}
+
 if (isset($_GET['message'])) {
     $message = trim((string) $_GET['message']);
     $messageType = $_GET['type'] === 'error' ? 'error' : 'success';
@@ -212,15 +249,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         redirect_with_feedback('New admin user added.', 'success');
     }
 
-    $telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
+    $currentSettings = contact_trace_current_manageable_settings();
+    $telegramBotToken = $currentSettings['TELEGRAM_BOT_TOKEN'];
 
     if ($action === 'save_telegram_settings' || $action === 'save_and_register_telegram_webhook') {
         $submittedToken = trim((string) ($_POST['telegram_bot_token'] ?? ''));
-        $settings = [
+        $settings = array_merge($currentSettings, [
             'TELEGRAM_BOT_TOKEN' => $submittedToken !== '' ? $submittedToken : $telegramBotToken,
             'TELEGRAM_ALLOWED_CHAT_IDS' => trim((string) ($_POST['telegram_allowed_chat_ids'] ?? '')),
             'APP_PUBLIC_URL' => trim((string) ($_POST['app_public_url'] ?? '')),
-        ];
+        ]);
 
         try {
             contact_trace_save_manageable_settings($settings);
@@ -238,6 +276,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         redirect_with_feedback('Telegram settings saved.', 'success');
     }
 
+    if ($action === 'save_whatsapp_settings') {
+        $submittedToken = trim((string) ($_POST['whatsapp_bridge_token'] ?? ''));
+        $settings = array_merge($currentSettings, [
+            'WHATSAPP_BRIDGE_URL' => trim((string) ($_POST['whatsapp_bridge_url'] ?? '')),
+            'WHATSAPP_BRIDGE_TOKEN' => $submittedToken !== '' ? $submittedToken : $currentSettings['WHATSAPP_BRIDGE_TOKEN'],
+            'WHATSAPP_AUTO_MESSAGE_TEMPLATE' => trim((string) ($_POST['whatsapp_auto_message_template'] ?? '')),
+        ]);
+
+        try {
+            contact_trace_save_manageable_settings($settings);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback('WhatsApp settings saved.', 'success');
+    }
+
     if ($action === 'check_telegram_webhook') {
         try {
             $webhookInfo = contact_trace_get_telegram_webhook_info($telegramBotToken);
@@ -247,16 +302,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         redirect_with_feedback(telegram_webhook_status_summary($webhookInfo), 'success');
     }
+
+    if ($action === 'check_whatsapp_bridge') {
+        try {
+            $bridgeInfo = contact_trace_get_whatsapp_bridge_status();
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback(whatsapp_bridge_status_summary($bridgeInfo), 'success');
+    }
 }
 
 $telegramBotToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
 $telegramAllowedChatIds = contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS');
 $publicBaseUrl = contact_trace_env('APP_PUBLIC_URL');
+$whatsAppBridgeUrl = contact_trace_env('WHATSAPP_BRIDGE_URL');
+$whatsAppBridgeToken = contact_trace_env('WHATSAPP_BRIDGE_TOKEN');
+$whatsAppAutoMessageTemplate = contact_trace_env('WHATSAPP_AUTO_MESSAGE_TEMPLATE');
 $telegramWebhookUrl = suggested_telegram_webhook_url();
+$whatsAppDashboardUrl = suggested_whatsapp_dashboard_url();
 $telegramBotReady = $telegramBotToken !== '';
+$whatsAppBridgeReady = $whatsAppBridgeUrl !== '' && $whatsAppBridgeToken !== '';
 $isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(current_request_host(), 'localhost') === false && current_request_host() !== '127.0.0.1';
 $isSuggestedWebhookPublic = $publicBaseUrl !== '' || $isSuggestedWebhookPublic;
 $maskedBotToken = mask_secret($telegramBotToken);
+$maskedWhatsAppBridgeToken = mask_secret($whatsAppBridgeToken);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -279,14 +350,14 @@ $maskedBotToken = mask_secret($telegramBotToken);
             <div class="border rounded bg-white shadow-sm p-4">
                 <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                     <div>
-                        <h1 class="h2 mb-2">Telegram Admin</h1>
+                        <h1 class="h2 mb-2">Messaging Admin</h1>
                         <p class="text-secondary mb-0">
                             <?php if ($adminUserCount === 0): ?>
-                                Create the first admin account to lock this page before managing Telegram settings.
+                                Create the first admin account to lock this page before managing Telegram and WhatsApp settings.
                             <?php elseif (!$isAuthenticated): ?>
-                                Sign in with an admin username and password to manage Telegram settings.
+                                Sign in with an admin username and password to manage Telegram and WhatsApp settings.
                             <?php else: ?>
-                                Signed in as <strong><?= escape((string) $currentAdminUser['username']) ?></strong>. Manage Telegram settings and create more admin users here.
+                                Signed in as <strong><?= escape((string) $currentAdminUser['username']) ?></strong>. Manage messaging settings and create more admin users here.
                             <?php endif; ?>
                         </p>
                     </div>
@@ -344,7 +415,7 @@ $maskedBotToken = mask_secret($telegramBotToken);
                 <div class="card shadow-sm">
                     <div class="card-body p-4">
                         <h2 class="h5 mb-1">Admin login</h2>
-                        <p class="text-secondary small mb-4">Only authenticated admin users can access Telegram settings.</p>
+                        <p class="text-secondary small mb-4">Only authenticated admin users can access messaging settings.</p>
 
                         <form method="post" class="row g-3">
                             <input type="hidden" name="action" value="login_admin">
@@ -398,11 +469,83 @@ $maskedBotToken = mask_secret($telegramBotToken);
                     </div>
                 </div>
 
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                            <div>
+                                <h2 class="h5 mb-1">WhatsApp bridge</h2>
+                                <p class="text-secondary small mb-0">Configure the local QR bridge that keeps a WhatsApp Web session and sends the first message automatically after Telegram adds a lead.</p>
+                            </div>
+                            <div class="small text-secondary">
+                                <div>Bridge URL: <?= escape($whatsAppBridgeUrl !== '' ? $whatsAppBridgeUrl : 'missing') ?></div>
+                                <div>Bridge token: <?= escape($maskedWhatsAppBridgeToken) ?></div>
+                            </div>
+                        </div>
+
+                        <form method="post" class="row g-3 align-items-end">
+                            <div class="col-12 col-lg-6">
+                                <label for="whatsapp_bridge_url" class="form-label">Bridge URL</label>
+                                <input
+                                    id="whatsapp_bridge_url"
+                                    type="url"
+                                    name="whatsapp_bridge_url"
+                                    class="form-control"
+                                    value="<?= escape($whatsAppBridgeUrl) ?>"
+                                    placeholder="http://127.0.0.1:3001"
+                                >
+                                <div class="form-text">This local Node.js service serves the QR page and sends messages for WhatsApp Web.</div>
+                            </div>
+                            <div class="col-12 col-lg-6">
+                                <label for="whatsapp_bridge_token" class="form-label">Bridge token</label>
+                                <input
+                                    id="whatsapp_bridge_token"
+                                    type="password"
+                                    name="whatsapp_bridge_token"
+                                    class="form-control"
+                                    placeholder="<?= $whatsAppBridgeReady ? 'Leave blank to keep current token' : 'shared-secret-token' ?>"
+                                    autocomplete="off"
+                                >
+                                <div class="form-text">Leave blank to keep the current token. PHP sends it on every bridge request.</div>
+                            </div>
+                            <div class="col-12">
+                                <label for="whatsapp_auto_message_template" class="form-label">Auto message template</label>
+                                <textarea
+                                    id="whatsapp_auto_message_template"
+                                    name="whatsapp_auto_message_template"
+                                    class="form-control"
+                                    rows="4"
+                                    placeholder="Hi {{owner_name}}, I saw your ad {{ad_url}}."
+                                ><?= escape($whatsAppAutoMessageTemplate) ?></textarea>
+                                <div class="form-text">Available placeholders: {{owner_name}}, {{phone}}, {{ad_url}}, {{service_offer}}, {{latest_reply}}, {{notes}}, {{status}}.</div>
+                            </div>
+                            <div class="col-6 col-lg-3 d-grid">
+                                <button type="submit" name="action" value="save_whatsapp_settings" class="btn btn-outline-secondary">Save settings</button>
+                            </div>
+                            <div class="col-6 col-lg-3 d-grid">
+                                <button type="submit" name="action" value="check_whatsapp_bridge" class="btn btn-outline-primary" <?= $whatsAppBridgeReady ? '' : 'disabled' ?>>Check status</button>
+                            </div>
+                            <div class="col-12 col-lg-3 d-grid">
+                                <?php if ($whatsAppDashboardUrl !== ''): ?>
+                                    <a href="<?= escape($whatsAppDashboardUrl) ?>" target="_blank" rel="noreferrer" class="btn btn-outline-secondary">Open QR dashboard</a>
+                                <?php else: ?>
+                                    <button type="button" class="btn btn-outline-secondary" disabled>Open QR dashboard</button>
+                                <?php endif; ?>
+                            </div>
+                        </form>
+
+                        <?php if (!$whatsAppBridgeReady): ?>
+                            <p class="small text-danger mb-0 mt-3">Save the bridge URL and token first, then open the QR dashboard to connect WhatsApp Web.</p>
+                        <?php elseif ($whatsAppAutoMessageTemplate === ''): ?>
+                            <p class="small text-danger mb-0 mt-3">Set an auto message template if you want Telegram adds to send a WhatsApp message automatically.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
                 <div class="card shadow-sm">
                     <div class="card-body p-4">
                         <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
                             <div>
-                                <h2 class="h5 mb-1">Bot settings</h2>
+                                <h2 class="h5 mb-1">Telegram bot settings</h2>
                                 <p class="text-secondary small mb-0">Admin can save the bot token here and register the public webhook for <strong>telegram-bot.php</strong>.</p>
                             </div>
                             <div class="small text-secondary">
