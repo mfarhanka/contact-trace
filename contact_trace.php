@@ -63,6 +63,9 @@ function contact_trace_manageable_settings(): array
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_ALLOWED_CHAT_IDS',
         'APP_PUBLIC_URL',
+        'WHATSAPP_BRIDGE_URL',
+        'WHATSAPP_BRIDGE_TOKEN',
+        'WHATSAPP_AUTO_MESSAGE_TEMPLATE',
     ];
 }
 
@@ -299,6 +302,40 @@ function contact_trace_verify_admin_credentials(PDO $pdo, string $username, stri
 function contact_trace_normalize_phone(string $phone): string
 {
     return preg_replace('/\D+/', '', $phone) ?? '';
+}
+
+function contact_trace_normalize_whatsapp_phone(string $phone): string
+{
+    $digits = contact_trace_normalize_phone($phone);
+
+    if ($digits === '') {
+        return '';
+    }
+
+    if (str_starts_with($digits, '00')) {
+        return substr($digits, 2);
+    }
+
+    if (str_starts_with($digits, '60')) {
+        return $digits;
+    }
+
+    if (str_starts_with($digits, '0')) {
+        return '6' . $digits;
+    }
+
+    return $digits;
+}
+
+function contact_trace_whatsapp_link(string $phone): string
+{
+    $whatsappPhone = contact_trace_normalize_whatsapp_phone($phone);
+
+    if ($whatsappPhone === '') {
+        return '';
+    }
+
+    return 'https://wa.me/' . rawurlencode($whatsappPhone);
 }
 
 function contact_trace_normalize_telegram_handle(string $telegramHandle): string
@@ -618,4 +655,198 @@ function contact_trace_send_telegram_message(string $botToken, string $chatId, s
         'chat_id' => $chatId,
         'text' => $text,
     ]);
+}
+
+function contact_trace_whatsapp_bridge_is_configured(): bool
+{
+    return contact_trace_env('WHATSAPP_BRIDGE_URL') !== '' && contact_trace_env('WHATSAPP_BRIDGE_TOKEN') !== '';
+}
+
+function contact_trace_whatsapp_bridge_request(string $method, string $path, array $payload = []): array
+{
+    $baseUrl = rtrim(contact_trace_env('WHATSAPP_BRIDGE_URL'), '/');
+    $token = contact_trace_env('WHATSAPP_BRIDGE_TOKEN');
+
+    if ($baseUrl === '' || $token === '') {
+        throw new RuntimeException('WhatsApp bridge is not configured yet.');
+    }
+
+    if (!filter_var($baseUrl, FILTER_VALIDATE_URL)) {
+        throw new RuntimeException('WhatsApp bridge URL is invalid.');
+    }
+
+    $url = $baseUrl . '/' . ltrim($path, '/');
+    $body = $payload === [] ? '' : json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+    if ($body === false) {
+        throw new RuntimeException('Unable to encode WhatsApp bridge payload.');
+    }
+
+    if (function_exists('curl_init')) {
+        $response = contact_trace_whatsapp_bridge_request_via_curl($method, $url, $token, $body);
+    } else {
+        $response = contact_trace_whatsapp_bridge_request_via_stream($method, $url, $token, $body);
+    }
+
+    $decoded = json_decode($response, true);
+
+    if (!is_array($decoded)) {
+        throw new RuntimeException('WhatsApp bridge returned an invalid response.');
+    }
+
+    if (($decoded['ok'] ?? false) !== true) {
+        $error = trim((string) ($decoded['error'] ?? 'WhatsApp bridge request failed.'));
+        throw new RuntimeException($error !== '' ? $error : 'WhatsApp bridge request failed.');
+    }
+
+    $result = $decoded['result'] ?? [];
+
+    return is_array($result) ? $result : [];
+}
+
+function contact_trace_whatsapp_bridge_request_via_curl(string $method, string $url, string $token, string $body): string
+{
+    $handle = curl_init($url);
+
+    if ($handle === false) {
+        throw new RuntimeException('Unable to initialize cURL for WhatsApp bridge request.');
+    }
+
+    $headers = [
+        'X-Bridge-Token: ' . $token,
+        'Accept: application/json',
+    ];
+
+    if ($body !== '') {
+        $headers[] = 'Content-Type: application/json';
+        $headers[] = 'Content-Length: ' . strlen($body);
+    }
+
+    curl_setopt_array($handle, [
+        CURLOPT_CUSTOMREQUEST => strtoupper($method),
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => $body !== '' ? $body : null,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+
+    $response = curl_exec($handle);
+
+    if ($response === false) {
+        $errorMessage = trim(curl_error($handle));
+        curl_close($handle);
+        throw new RuntimeException('WhatsApp bridge request failed: ' . ($errorMessage !== '' ? $errorMessage : 'Unknown cURL error.'));
+    }
+
+    curl_close($handle);
+
+    return is_string($response) ? $response : '';
+}
+
+function contact_trace_whatsapp_bridge_request_via_stream(string $method, string $url, string $token, string $body): string
+{
+    $headers = [
+        'X-Bridge-Token: ' . $token,
+        'Accept: application/json',
+    ];
+
+    if ($body !== '') {
+        $headers[] = 'Content-Type: application/json';
+        $headers[] = 'Content-Length: ' . strlen($body);
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => strtoupper($method),
+            'header' => implode("\r\n", $headers),
+            'content' => $body,
+            'ignore_errors' => true,
+            'timeout' => 15,
+        ],
+    ]);
+
+    $response = @file_get_contents($url, false, $context);
+
+    if ($response === false) {
+        $lastError = error_get_last();
+        $errorMessage = trim((string) ($lastError['message'] ?? 'Unknown stream error.'));
+        throw new RuntimeException('WhatsApp bridge request failed: ' . $errorMessage);
+    }
+
+    return $response;
+}
+
+function contact_trace_get_whatsapp_bridge_status(): array
+{
+    return contact_trace_whatsapp_bridge_request('GET', '/api/status');
+}
+
+function contact_trace_send_whatsapp_message(string $phone, string $message): array
+{
+    $normalizedPhone = contact_trace_normalize_whatsapp_phone($phone);
+
+    if ($normalizedPhone === '') {
+        throw new InvalidArgumentException('Lead phone number is not valid for WhatsApp.');
+    }
+
+    $cleanMessage = trim($message);
+
+    if ($cleanMessage === '') {
+        throw new InvalidArgumentException('WhatsApp message is empty.');
+    }
+
+    return contact_trace_whatsapp_bridge_request('POST', '/api/send', [
+        'phone' => $normalizedPhone,
+        'text' => $cleanMessage,
+    ]);
+}
+
+function contact_trace_render_whatsapp_template(string $template, array $lead): string
+{
+    $replacements = [
+        '{{owner_name}}' => trim((string) ($lead['owner_name'] ?? '')),
+        '{{phone}}' => trim((string) ($lead['phone_display'] ?? '')),
+        '{{ad_url}}' => trim((string) ($lead['ad_url'] ?? '')),
+        '{{service_offer}}' => trim((string) ($lead['service_offer'] ?? '')),
+        '{{latest_reply}}' => trim((string) ($lead['latest_reply'] ?? '')),
+        '{{notes}}' => trim((string) ($lead['notes'] ?? '')),
+        '{{status}}' => trim((string) ($lead['status'] ?? '')),
+    ];
+
+    return trim(strtr($template, $replacements));
+}
+
+function contact_trace_send_whatsapp_auto_message_for_lead(array $lead): array
+{
+    $template = contact_trace_env('WHATSAPP_AUTO_MESSAGE_TEMPLATE');
+
+    if ($template === '') {
+        return [
+            'sent' => false,
+            'reason' => 'WhatsApp auto message template is empty.',
+        ];
+    }
+
+    if (!contact_trace_whatsapp_bridge_is_configured()) {
+        return [
+            'sent' => false,
+            'reason' => 'WhatsApp bridge is not configured.',
+        ];
+    }
+
+    $message = contact_trace_render_whatsapp_template($template, $lead);
+
+    if ($message === '') {
+        return [
+            'sent' => false,
+            'reason' => 'WhatsApp auto message rendered empty text.',
+        ];
+    }
+
+    $result = contact_trace_send_whatsapp_message((string) ($lead['phone_display'] ?? ''), $message);
+    $result['sent'] = true;
+    $result['message_text'] = $message;
+
+    return $result;
 }

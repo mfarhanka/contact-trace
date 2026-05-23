@@ -160,8 +160,9 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
             }
 
             $leadId = contact_trace_add_lead($pdo, $input);
+            $lead = contact_trace_find_lead($pdo, $leadId);
 
-            return contact_trace_telegram_add_success_text($leadId, (string) $input['phone_display']);
+            return contact_trace_telegram_add_success_text($leadId, $lead ?? $input);
         }
 
         $firstField = contact_trace_telegram_add_first_field();
@@ -241,8 +242,9 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
         if (($payload['phone_display'] ?? '') !== '' && ($payload['ad_url'] ?? '') !== '') {
             contact_trace_delete_telegram_add_draft($pdo, $chatId);
             $leadId = contact_trace_add_lead($pdo, $payload);
+            $lead = contact_trace_find_lead($pdo, $leadId);
 
-            return contact_trace_telegram_add_success_text($leadId, (string) $payload['phone_display']);
+            return contact_trace_telegram_add_success_text($leadId, $lead ?? $payload);
         }
 
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
@@ -267,8 +269,9 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
 
     contact_trace_delete_telegram_add_draft($pdo, $chatId);
     $leadId = contact_trace_add_lead($pdo, $payload);
+    $lead = contact_trace_find_lead($pdo, $leadId);
 
-    return contact_trace_telegram_add_success_text($leadId, (string) $payload['phone_display']);
+    return contact_trace_telegram_add_success_text($leadId, $lead ?? $payload);
 }
 
 function contact_trace_parse_add_command(string $payload): array
@@ -396,10 +399,12 @@ function contact_trace_telegram_add_normalize_answer(string $field, string $text
     return [$value, null];
 }
 
-function contact_trace_telegram_add_success_text(int $leadId, string $phoneDisplay): string
+function contact_trace_telegram_add_success_text(int $leadId, array $lead): string
 {
     $lines = ['Lead saved with ID #' . $leadId];
-    $whatsAppLink = contact_trace_telegram_whatsapp_link($phoneDisplay);
+    $autoSendResult = contact_trace_send_whatsapp_auto_message_for_lead($lead);
+    $lines[] = contact_trace_telegram_whatsapp_auto_send_text($autoSendResult);
+    $whatsAppLink = contact_trace_telegram_whatsapp_link((string) ($lead['phone_display'] ?? ''));
 
     if ($whatsAppLink !== '') {
         $lines[] = 'WhatsApp: ' . $whatsAppLink;
@@ -408,21 +413,20 @@ function contact_trace_telegram_add_success_text(int $leadId, string $phoneDispl
     return implode("\n", $lines);
 }
 
+function contact_trace_telegram_whatsapp_auto_send_text(array $result): string
+{
+    if (($result['sent'] ?? false) === true) {
+        return 'WhatsApp auto-send: sent.';
+    }
+
+    $reason = trim((string) ($result['reason'] ?? 'Not configured.'));
+
+    return 'WhatsApp auto-send: skipped (' . $reason . ').';
+}
+
 function contact_trace_telegram_whatsapp_link(string $phone): string
 {
-    $digits = contact_trace_normalize_phone($phone);
-
-    if ($digits === '') {
-        return '';
-    }
-
-    if (str_starts_with($digits, '00')) {
-        $digits = substr($digits, 2);
-    } elseif (str_starts_with($digits, '0')) {
-        $digits = '6' . $digits;
-    }
-
-    return 'https://wa.me/' . rawurlencode($digits);
+    return contact_trace_whatsapp_link($phone);
 }
 
 function contact_trace_format_telegram_lead(array $lead): string

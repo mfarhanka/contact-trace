@@ -14,40 +14,6 @@ function escape(string $value): string
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
-function normalize_whatsapp_phone(string $phone): string
-{
-    $digits = contact_trace_normalize_phone($phone);
-
-    if ($digits === '') {
-        return '';
-    }
-
-    if (str_starts_with($digits, '00')) {
-        return substr($digits, 2);
-    }
-
-    if (str_starts_with($digits, '60')) {
-        return $digits;
-    }
-
-    if (str_starts_with($digits, '0')) {
-        return '6' . $digits;
-    }
-
-    return $digits;
-}
-
-function whatsapp_link(string $phone): string
-{
-    $whatsappPhone = normalize_whatsapp_phone($phone);
-
-    if ($whatsappPhone === '') {
-        return '';
-    }
-
-    return 'https://wa.me/' . rawurlencode($whatsappPhone);
-}
-
 function telegram_link(string $telegramHandle): string
 {
     $normalizedHandle = ltrim(trim($telegramHandle), '@');
@@ -272,7 +238,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                                 <td>
                                                     <div class="fw-semibold"><?= escape($lead['owner_name'] !== '' ? $lead['owner_name'] : $lead['phone_display']) ?></div>
                                                     <div class="text-secondary small"><?= escape($lead['phone_display']) ?></div>
-                                                    <?php $whatsappLink = whatsapp_link($lead['phone_display']); ?>
+                                                    <?php $whatsappLink = contact_trace_whatsapp_link($lead['phone_display']); ?>
                                                     <?php if ($whatsappLink !== ''): ?>
                                                         <div class="small">
                                                             <a href="<?= escape($whatsappLink) ?>" target="_blank" rel="noreferrer">WhatsApp</a>
