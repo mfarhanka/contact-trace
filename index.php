@@ -91,6 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'add_lead') {
         $phoneDisplay = trim((string) ($_POST['phone_display'] ?? ''));
+        $adUrl = trim((string) ($_POST['ad_url'] ?? ''));
 
         try {
             contact_trace_add_lead($pdo, $_POST);
@@ -98,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect_with_feedback($exception->getMessage(), 'error');
         }
 
-        redirect_with_feedback('Lead saved.', 'success', $phoneDisplay);
+        redirect_with_feedback('Lead saved.', 'success', $phoneDisplay !== '' ? $phoneDisplay : $adUrl);
     }
 
     if ($action === 'update_lead') {
@@ -173,8 +174,8 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
 
                                 <div>
                                     <label for="phone_display" class="form-label">Phone number</label>
-                                    <input id="phone_display" type="text" name="phone_display" class="form-control" placeholder="012-3456789" inputmode="tel" required>
-                                    <div class="form-text">WhatsApp links auto-convert local numbers like 012-3456789 to 60123456789.</div>
+                                    <input id="phone_display" type="text" name="phone_display" class="form-control" placeholder="012-3456789" inputmode="tel">
+                                    <div class="form-text">Leave this blank for Mudah links and the app will try to read the number locally with Edge or Chrome. WhatsApp links auto-convert local numbers like 012-3456789 to 60123456789.</div>
                                 </div>
 
                                 <div>

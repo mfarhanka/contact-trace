@@ -331,20 +331,237 @@ function contact_trace_validate_status(string $status): string
     return $cleanStatus;
 }
 
+function contact_trace_extract_contact_from_ad_url(string $adUrl): array
+{
+    if (!filter_var($adUrl, FILTER_VALIDATE_URL)) {
+        return [
+            'phone_display' => '',
+            'owner_name' => '',
+        ];
+    }
+
+    $host = strtolower((string) parse_url($adUrl, PHP_URL_HOST));
+
+    if ($host === 'mudah.my' || str_ends_with($host, '.mudah.my')) {
+        return contact_trace_extract_mudah_contact($adUrl);
+    }
+
+    return [
+        'phone_display' => '',
+        'owner_name' => '',
+    ];
+}
+
+function contact_trace_extract_phone_from_ad_url(string $adUrl): string
+{
+    return (string) (contact_trace_extract_contact_from_ad_url($adUrl)['phone_display'] ?? '');
+}
+
+function contact_trace_extract_mudah_phone(string $adUrl): string
+{
+    return (string) (contact_trace_extract_mudah_contact($adUrl)['phone_display'] ?? '');
+}
+
+function contact_trace_extract_mudah_contact(string $adUrl): array
+{
+    $browserPath = contact_trace_find_headless_browser_path();
+
+    if ($browserPath === null) {
+        return [
+            'phone_display' => '',
+            'owner_name' => '',
+        ];
+    }
+
+    $dom = contact_trace_render_page_dom($browserPath, $adUrl);
+
+    if ($dom === '') {
+        return [
+            'phone_display' => '',
+            'owner_name' => '',
+        ];
+    }
+
+    $nextDataContact = contact_trace_extract_mudah_contact_from_next_data($dom);
+
+    if ($nextDataContact['phone_display'] !== '' || $nextDataContact['owner_name'] !== '') {
+        return $nextDataContact;
+    }
+
+    return [
+        'phone_display' => preg_match('/"phone":"([^"]+)"/', $dom, $phoneMatches) === 1
+            ? contact_trace_normalize_phone((string) $phoneMatches[1])
+            : '',
+        'owner_name' => preg_match('/"name":"([^"]+)"/', $dom, $nameMatches) === 1
+            ? trim((string) $nameMatches[1])
+            : '',
+    ];
+}
+
+function contact_trace_find_headless_browser_path(): ?string
+{
+    foreach ([
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    ] as $browserPath) {
+        if (is_file($browserPath) && is_readable($browserPath)) {
+            return $browserPath;
+        }
+    }
+
+    return null;
+}
+
+function contact_trace_render_page_dom(string $browserPath, string $adUrl, int $timeoutSeconds = 20): string
+{
+    if (!function_exists('proc_open')) {
+        return '';
+    }
+
+    $descriptorSpec = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = proc_open(
+        [
+            $browserPath,
+            '--headless',
+            '--disable-gpu',
+            '--dump-dom',
+            '--virtual-time-budget=12000',
+            $adUrl,
+        ],
+        $descriptorSpec,
+        $pipes
+    );
+
+    if (!is_resource($process)) {
+        return '';
+    }
+
+    fclose($pipes[0]);
+    stream_set_blocking($pipes[1], false);
+    stream_set_blocking($pipes[2], false);
+
+    $stdout = '';
+    $stderr = '';
+    $deadline = microtime(true) + $timeoutSeconds;
+
+    do {
+        $stdout .= stream_get_contents($pipes[1]);
+        $stderr .= stream_get_contents($pipes[2]);
+        $status = proc_get_status($process);
+
+        if (!is_array($status) || !$status['running']) {
+            break;
+        }
+
+        usleep(100000);
+    } while (microtime(true) < $deadline);
+
+    $stdout .= stream_get_contents($pipes[1]);
+    $stderr .= stream_get_contents($pipes[2]);
+
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    if (is_array($status ?? null) && $status['running']) {
+        proc_terminate($process);
+        proc_close($process);
+        return '';
+    }
+
+    $exitCode = proc_close($process);
+
+    if ($exitCode !== 0 && $stdout === '') {
+        return '';
+    }
+
+    return $stdout !== '' ? $stdout : $stderr;
+}
+
+function contact_trace_extract_mudah_phone_from_next_data(string $dom): string
+{
+    return (string) (contact_trace_extract_mudah_contact_from_next_data($dom)['phone_display'] ?? '');
+}
+
+function contact_trace_extract_mudah_contact_from_next_data(string $dom): array
+{
+    if (preg_match('/<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)<\/script>/is', $dom, $matches) !== 1) {
+        return [
+            'phone_display' => '',
+            'owner_name' => '',
+        ];
+    }
+
+    $decodedJson = html_entity_decode((string) $matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $payload = json_decode($decodedJson, true);
+
+    if (!is_array($payload)) {
+        return [
+            'phone_display' => '',
+            'owner_name' => '',
+        ];
+    }
+
+    foreach ([
+        $payload['props']['pageProps']['initialState']['adDetails']['byID'] ?? null,
+        $payload['props']['initialState']['adDetails']['byID'] ?? null,
+    ] as $adDetailsById) {
+        if (!is_array($adDetailsById)) {
+            continue;
+        }
+
+        foreach ($adDetailsById as $adDetails) {
+            $phone = contact_trace_normalize_phone((string) ($adDetails['attributes']['phone'] ?? ''));
+            $ownerName = trim((string) ($adDetails['attributes']['name'] ?? ''));
+
+            if ($phone !== '' || $ownerName !== '') {
+                return [
+                    'phone_display' => $phone,
+                    'owner_name' => $ownerName,
+                ];
+            }
+        }
+    }
+
+    return [
+        'phone_display' => '',
+        'owner_name' => '',
+    ];
+}
+
 function contact_trace_add_lead(PDO $pdo, array $input): int
 {
     $ownerName = trim((string) ($input['owner_name'] ?? ''));
     $telegramHandle = contact_trace_normalize_telegram_handle((string) ($input['telegram_handle'] ?? ''));
     $phoneDisplay = trim((string) ($input['phone_display'] ?? ''));
-    $phoneNormalized = contact_trace_normalize_phone($phoneDisplay);
     $adUrl = trim((string) ($input['ad_url'] ?? ''));
     $serviceOffer = trim((string) ($input['service_offer'] ?? ''));
     $latestReply = trim((string) ($input['latest_reply'] ?? ''));
     $notes = trim((string) ($input['notes'] ?? ''));
     $status = contact_trace_validate_status((string) ($input['status'] ?? 'contacted'));
 
+    if (($phoneDisplay === '' || $ownerName === '') && $adUrl !== '') {
+        $contact = contact_trace_extract_contact_from_ad_url($adUrl);
+
+        if ($phoneDisplay === '') {
+            $phoneDisplay = (string) ($contact['phone_display'] ?? '');
+        }
+
+        if ($ownerName === '') {
+            $ownerName = trim((string) ($contact['owner_name'] ?? ''));
+        }
+    }
+
+    $phoneNormalized = contact_trace_normalize_phone($phoneDisplay);
+
     if ($phoneDisplay === '' || $phoneNormalized === '' || $adUrl === '') {
-        throw new InvalidArgumentException('Phone number and ad link are required.');
+        throw new InvalidArgumentException('Phone number is required. Leave it blank only when the app can read it from a supported ad link.');
     }
 
     if (!filter_var($adUrl, FILTER_VALIDATE_URL)) {

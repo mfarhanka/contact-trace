@@ -256,6 +256,15 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
         return $error . "\n\n" . contact_trace_telegram_add_prompt($currentField);
     }
 
+    if (is_array($value) && (($value['__save_now'] ?? false) === true)) {
+        unset($value['__save_now']);
+        contact_trace_delete_telegram_add_draft($pdo, $chatId);
+        $leadId = contact_trace_add_lead($pdo, $value);
+        $lead = contact_trace_find_lead($pdo, $leadId);
+
+        return contact_trace_telegram_add_success_text($leadId, (string) ($lead['phone_display'] ?? ''));
+    }
+
     $payload[$currentField] = $value;
     $nextField = contact_trace_telegram_add_next_field($currentField);
 
@@ -267,12 +276,28 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
 
     contact_trace_delete_telegram_add_draft($pdo, $chatId);
     $leadId = contact_trace_add_lead($pdo, $payload);
+    $lead = contact_trace_find_lead($pdo, $leadId);
 
-    return contact_trace_telegram_add_success_text($leadId, (string) $payload['phone_display']);
+    return contact_trace_telegram_add_success_text($leadId, (string) ($lead['phone_display'] ?? ''));
 }
 
 function contact_trace_parse_add_command(string $payload): array
 {
+    $trimmedPayload = trim($payload);
+
+    if ($trimmedPayload !== '' && filter_var($trimmedPayload, FILTER_VALIDATE_URL)) {
+        return [[
+            'phone_display' => '',
+            'ad_url' => $trimmedPayload,
+            'owner_name' => '',
+            'telegram_handle' => '',
+            'service_offer' => '',
+            'latest_reply' => '',
+            'notes' => '',
+            'status' => 'contacted',
+        ], null];
+    }
+
     $parts = array_map(
         static fn (string $value): string => trim($value),
         explode('|', $payload)
@@ -370,8 +395,22 @@ function contact_trace_telegram_add_normalize_answer(string $field, string $text
     }
 
     if ($field === 'phone_display') {
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
+            return [[
+                'phone_display' => '',
+                'ad_url' => $value,
+                'owner_name' => '',
+                'telegram_handle' => '',
+                'service_offer' => '',
+                'latest_reply' => '',
+                'notes' => '',
+                'status' => 'contacted',
+                '__save_now' => true,
+            ], null];
+        }
+
         if (contact_trace_normalize_phone($value) === '') {
-            return ['', 'Please send a valid phone number.'];
+            return ['', 'Please send a valid phone number, or send a supported ad URL such as a Mudah link.'];
         }
 
         return [$value, null];
@@ -471,9 +510,11 @@ function contact_trace_help_text(): string
         '/delete 12',
         '/add',
         '/cancel',
+        '/add https://www.mudah.my/...',
         '/add phone | ad_url | owner',
         '',
         'Use /add for step-by-step entry.',
+        'You can also send only a supported ad URL and the bot will try to fill phone and owner name.',
         'Use - or /skip for the optional owner name.',
     ]);
 }
@@ -485,10 +526,13 @@ function contact_trace_add_usage_text(): string
         '/add',
         'Starts step-by-step entry in Telegram.',
         '',
+        'Or send only a supported ad URL:',
+        '/add https://www.mudah.my/your-listing',
+        '',
         'Or send everything in one line:',
         '/add 012-3456789 | https://example.com/ad | Ali',
         '',
-        'Phone number and ad URL are required.',
+        'Phone number and ad URL are required unless the bot can read them from a supported ad link.',
         'Owner name is optional.',
         'Use - or /skip for the owner name if you want to leave it empty.',
     ]);
