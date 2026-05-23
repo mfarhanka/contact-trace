@@ -254,7 +254,7 @@ function renderDashboard() {
 
     async function refreshStatus() {
       const token = tokenField.value.trim();
-      const url = token ? `/api/status?token=${encodeURIComponent(token)}` : '/api/status';
+      const url = token ? '/api/status?token=' + encodeURIComponent(token) : '/api/status';
 
       try {
         const response = await fetch(url, { headers: { Accept: 'application/json' } });

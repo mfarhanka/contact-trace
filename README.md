@@ -19,7 +19,7 @@ Simple PHP + SQLite tool to track outreach leads from listings like Mudah.
 
 1. Open `http://localhost/contact-trace/admin.php`.
 2. On the first visit, create the first admin username and password to secure the page.
-3. On later visits, log in with that admin account before changing Telegram settings.
+3. On later visits, log in with that admin account before changing Telegram or WhatsApp settings.
 4. After logging in, use the same admin page to create another admin user when you want to share access.
 
 ## Telegram bot
@@ -41,6 +41,37 @@ You can control the same leads database through a Telegram bot webhook.
 	- `/cancel` to stop an in-progress guided add
 
 Use `-` or `/skip` for any optional empty field in `/add`.
+
+## WhatsApp bridge
+
+The app can also send a WhatsApp message automatically right after a lead is added through Telegram. This uses a small local Node.js bridge that stays logged in to WhatsApp Web.
+
+1. Set these values in `.env` or save them from `admin.php`:
+	- `WHATSAPP_BRIDGE_URL`: default `http://127.0.0.1:3001`
+	- `WHATSAPP_BRIDGE_TOKEN`: any long random secret shared between PHP and the bridge
+	- `WHATSAPP_AUTO_MESSAGE_TEMPLATE`: the message sent after Telegram saves a lead
+2. Install and start the bridge:
+	- `cd whatsapp-bridge`
+	- `npm install`
+	- `npm start`
+3. Open `admin.php`, save the bridge URL, token, and auto message template.
+4. Click `Open QR dashboard` in the admin page and scan the QR code using WhatsApp on your phone.
+5. Use `/add` in Telegram. After the lead is saved, the bot will attempt to send the WhatsApp template to that lead automatically.
+
+Template placeholders:
+
+- `{{owner_name}}`
+- `{{phone}}`
+- `{{ad_url}}`
+- `{{service_offer}}`
+- `{{latest_reply}}`
+- `{{notes}}`
+- `{{status}}`
+
+Optional bridge runtime settings:
+
+- `WHATSAPP_BRIDGE_HOST`: defaults to `127.0.0.1`
+- `WHATSAPP_BRIDGE_PORT`: defaults to `3001`
 
 ## Main fields
 
