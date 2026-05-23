@@ -414,9 +414,59 @@ function contact_trace_find_headless_browser_path(): ?string
     return null;
 }
 
+function contact_trace_create_browser_profile_directory(): ?string
+{
+    $baseTempDirectory = rtrim(sys_get_temp_dir(), "\\/");
+
+    if ($baseTempDirectory === '') {
+        return null;
+    }
+
+    $profileDirectory = $baseTempDirectory . DIRECTORY_SEPARATOR . 'contact-trace-browser-' . bin2hex(random_bytes(8));
+
+    if (!@mkdir($profileDirectory, 0700, true) && !is_dir($profileDirectory)) {
+        return null;
+    }
+
+    return $profileDirectory;
+}
+
+function contact_trace_delete_directory(string $directory): void
+{
+    if (!is_dir($directory)) {
+        if (is_file($directory)) {
+            @unlink($directory);
+        }
+
+        return;
+    }
+
+    $items = scandir($directory);
+
+    if ($items === false) {
+        return;
+    }
+
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        contact_trace_delete_directory($directory . DIRECTORY_SEPARATOR . $item);
+    }
+
+    @rmdir($directory);
+}
+
 function contact_trace_render_page_dom(string $browserPath, string $adUrl, int $timeoutSeconds = 20): string
 {
     if (!function_exists('proc_open')) {
+        return '';
+    }
+
+    $profileDirectory = contact_trace_create_browser_profile_directory();
+
+    if ($profileDirectory === null) {
         return '';
     }
 
@@ -430,7 +480,16 @@ function contact_trace_render_page_dom(string $browserPath, string $adUrl, int $
         [
             $browserPath,
             '--headless',
+            '--headless=new',
             '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-dev-shm-usage',
+            '--disable-background-networking',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--no-sandbox',
+            '--remote-debugging-port=0',
+            '--user-data-dir=' . $profileDirectory,
             '--dump-dom',
             '--virtual-time-budget=12000',
             $adUrl,
@@ -440,6 +499,7 @@ function contact_trace_render_page_dom(string $browserPath, string $adUrl, int $
     );
 
     if (!is_resource($process)) {
+        contact_trace_delete_directory($profileDirectory);
         return '';
     }
 
@@ -472,13 +532,15 @@ function contact_trace_render_page_dom(string $browserPath, string $adUrl, int $
     if (is_array($status ?? null) && $status['running']) {
         proc_terminate($process);
         proc_close($process);
+        contact_trace_delete_directory($profileDirectory);
         return '';
     }
 
     $exitCode = proc_close($process);
+    contact_trace_delete_directory($profileDirectory);
 
     if ($exitCode !== 0 && $stdout === '') {
-        return '';
+        return $stderr;
     }
 
     return $stdout !== '' ? $stdout : $stderr;
