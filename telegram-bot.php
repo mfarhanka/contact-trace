@@ -159,6 +159,21 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
                 return $error . "\n\n" . contact_trace_add_usage_text();
             }
 
+            if (($input['phone_display'] ?? '') === '' && ($input['ad_url'] ?? '') !== '') {
+                $draftPayload = contact_trace_telegram_fill_from_ad_url($input);
+
+                if (($draftPayload['phone_display'] ?? '') === '') {
+                    contact_trace_save_telegram_add_draft($pdo, $chatId, $draftPayload, 'phone_display');
+
+                    return implode("\n\n", [
+                        'I saved the ad URL first, but could not read the contact number automatically.',
+                        contact_trace_telegram_add_prompt('phone_display'),
+                    ]);
+                }
+
+                $input = $draftPayload;
+            }
+
             $leadId = contact_trace_add_lead($pdo, $input);
             $lead = contact_trace_find_lead($pdo, $leadId);
 
@@ -258,6 +273,26 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
         return $error . "\n\n" . contact_trace_telegram_add_prompt($currentField);
     }
 
+    if ($currentField === 'ad_url') {
+        $payload['ad_url'] = (string) $value;
+        $payload = contact_trace_telegram_fill_from_ad_url($payload);
+
+        if (($payload['phone_display'] ?? '') !== '') {
+            contact_trace_delete_telegram_add_draft($pdo, $chatId);
+            $leadId = contact_trace_add_lead($pdo, $payload);
+            $lead = contact_trace_find_lead($pdo, $leadId);
+
+            return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+        }
+
+        contact_trace_save_telegram_add_draft($pdo, $chatId, $payload, 'phone_display');
+
+        return implode("\n\n", [
+            'I saved the ad URL first, but could not read the contact number automatically.',
+            contact_trace_telegram_add_prompt('phone_display'),
+        ]);
+    }
+
     if (is_array($value) && (($value['__save_now'] ?? false) === true)) {
         unset($value['__save_now']);
         contact_trace_delete_telegram_add_draft($pdo, $chatId);
@@ -268,6 +303,15 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     }
 
     $payload[$currentField] = $value;
+
+    if ($currentField === 'phone_display' && ($payload['owner_name'] ?? '') !== '') {
+        contact_trace_delete_telegram_add_draft($pdo, $chatId);
+        $leadId = contact_trace_add_lead($pdo, $payload);
+        $lead = contact_trace_find_lead($pdo, $leadId);
+
+        return contact_trace_telegram_add_success_text($leadId, $lead ?? []);
+    }
+
     $nextField = contact_trace_telegram_add_next_field($currentField);
 
     if ($nextField !== null) {
@@ -306,14 +350,25 @@ function contact_trace_parse_add_command(string $payload): array
     );
 
     if (count($parts) < 2) {
-        return [null, 'Add needs at least phone and ad URL.'];
+        return [null, 'Add needs at least ad URL and phone number.'];
     }
 
     $parts = array_pad($parts, 8, '');
 
+    $firstPartIsUrl = filter_var($parts[0], FILTER_VALIDATE_URL) !== false;
+    $secondPartIsUrl = filter_var($parts[1], FILTER_VALIDATE_URL) !== false;
+
+    if ($firstPartIsUrl || !$secondPartIsUrl) {
+        $adUrl = $parts[0];
+        $phoneDisplay = $parts[1];
+    } else {
+        $phoneDisplay = $parts[0];
+        $adUrl = $parts[1];
+    }
+
     $input = [
-        'phone_display' => $parts[0],
-        'ad_url' => $parts[1],
+        'phone_display' => $phoneDisplay,
+        'ad_url' => $adUrl,
         'owner_name' => contact_trace_optional_part($parts[2]),
         'telegram_handle' => contact_trace_optional_part($parts[3]),
         'service_offer' => contact_trace_optional_part($parts[4]),
@@ -333,12 +388,12 @@ function contact_trace_optional_part(string $value): string
 function contact_trace_telegram_add_field_definitions(): array
 {
     return [
-        'phone_display' => [
-            'prompt' => '1/3 Send the contact number.',
+        'ad_url' => [
+            'prompt' => '1/3 Send the ad URL.',
             'required' => true,
         ],
-        'ad_url' => [
-            'prompt' => '2/3 Send the ad URL.',
+        'phone_display' => [
+            'prompt' => '2/3 Send the contact number.',
             'required' => true,
         ],
         'owner_name' => [
@@ -346,6 +401,27 @@ function contact_trace_telegram_add_field_definitions(): array
             'required' => false,
         ],
     ];
+}
+
+function contact_trace_telegram_fill_from_ad_url(array $payload): array
+{
+    $adUrl = trim((string) ($payload['ad_url'] ?? ''));
+
+    if ($adUrl === '' || !filter_var($adUrl, FILTER_VALIDATE_URL)) {
+        return $payload;
+    }
+
+    $contact = contact_trace_extract_contact_from_ad_url($adUrl);
+
+    if (($payload['phone_display'] ?? '') === '') {
+        $payload['phone_display'] = (string) ($contact['phone_display'] ?? '');
+    }
+
+    if (($payload['owner_name'] ?? '') === '') {
+        $payload['owner_name'] = trim((string) ($contact['owner_name'] ?? ''));
+    }
+
+    return $payload;
 }
 
 function contact_trace_telegram_add_first_field(): string
@@ -524,7 +600,7 @@ function contact_trace_help_text(): string
         '/add',
         '/cancel',
         '/add https://www.mudah.my/...',
-        '/add phone | ad_url | owner',
+        '/add ad_url | phone | owner',
         '',
         'Use /add for step-by-step entry.',
         'You can also send only a supported ad URL and the bot will try to fill phone and owner name.',
@@ -543,9 +619,10 @@ function contact_trace_add_usage_text(): string
         '/add https://www.mudah.my/your-listing',
         '',
         'Or send everything in one line:',
-        '/add 012-3456789 | https://example.com/ad | Ali',
+        '/add https://example.com/ad | 012-3456789 | Ali',
         '',
         'Phone number and ad URL are required unless the bot can read them from a supported ad link.',
+        'The bot accepts both ad_url | phone and phone | ad_url, but ad_url first is preferred.',
         'Owner name is optional.',
         'Use - or /skip for the owner name if you want to leave it empty.',
     ]);
