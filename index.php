@@ -273,6 +273,9 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                                             </a>
                                                         </div>
                                                     <?php endif; ?>
+                                                    <?php if ($lead['telegram_user_id'] !== ''): ?>
+                                                        <div class="small text-secondary">Telegram ID: <?= escape($lead['telegram_user_id']) ?></div>
+                                                    <?php endif; ?>
                                                     <div class="text-secondary small"><?= escape($lead['service_offer']) !== '' ? escape($lead['service_offer']) : 'No service set' ?></div>
                                                 </td>
                                                 <td>
