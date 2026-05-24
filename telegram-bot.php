@@ -52,15 +52,29 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
         explode(',', contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS'))
     )));
 
+    $callbackQuery = $update['callback_query'] ?? null;
     $message = $update['message'] ?? $update['edited_message'] ?? null;
 
-    if (!is_array($message)) {
+    if (!is_array($message) && !is_array($callbackQuery)) {
         return;
     }
 
-    $chatId = $message['chat']['id'] ?? null;
-    $telegramUserId = $message['from']['id'] ?? null;
-    $text = trim((string) ($message['text'] ?? ''));
+    $chatId = null;
+    $telegramUserId = null;
+    $text = '';
+    $callbackQueryId = '';
+
+    if (is_array($callbackQuery)) {
+        $callbackMessage = $callbackQuery['message'] ?? null;
+        $chatId = is_array($callbackMessage) ? ($callbackMessage['chat']['id'] ?? null) : null;
+        $telegramUserId = $callbackQuery['from']['id'] ?? null;
+        $text = trim((string) ($callbackQuery['data'] ?? ''));
+        $callbackQueryId = trim((string) ($callbackQuery['id'] ?? ''));
+    } elseif (is_array($message)) {
+        $chatId = $message['chat']['id'] ?? null;
+        $telegramUserId = $message['from']['id'] ?? null;
+        $text = trim((string) ($message['text'] ?? ''));
+    }
 
     if (!is_int($chatId) && !is_string($chatId)) {
         return;
@@ -81,11 +95,22 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
     try {
         $pdo = contact_trace_get_pdo();
         $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text, $telegramUserId);
+        $draft = contact_trace_find_telegram_add_draft($pdo, $chatIdString);
     } catch (Throwable $exception) {
         $reply = 'Error: ' . $exception->getMessage();
+        $draft = null;
     }
 
-    contact_trace_send_telegram_message($resolvedBotToken, $chatIdString, $reply);
+    if ($callbackQueryId !== '') {
+        contact_trace_answer_telegram_callback_query_local($resolvedBotToken, $callbackQueryId);
+    }
+
+    contact_trace_send_telegram_message(
+        $resolvedBotToken,
+        $chatIdString,
+        $reply,
+        contact_trace_telegram_add_reply_markup($draft)
+    );
 }
 
 function contact_trace_find_telegram_add_draft(PDO $pdo, string $chatId): ?array
@@ -419,6 +444,47 @@ function contact_trace_telegram_add_prompt(string $field): string
     $definitions = contact_trace_telegram_add_field_definitions();
 
     return (string) ($definitions[$field]['prompt'] ?? 'Send the next value.');
+}
+
+function contact_trace_telegram_add_reply_markup(?array $draft): array
+{
+    if (!is_array($draft)) {
+        return [];
+    }
+
+    $fieldDefinitions = contact_trace_telegram_add_field_definitions();
+    $currentField = (string) ($draft['current_field'] ?? '');
+
+    if (!isset($fieldDefinitions[$currentField])) {
+        return [];
+    }
+
+    $buttons = [];
+
+    if (($fieldDefinitions[$currentField]['required'] ?? false) !== true) {
+        $buttons[] = [
+            'text' => 'Skip',
+            'callback_data' => '/skip',
+        ];
+    }
+
+    $buttons[] = [
+        'text' => 'Cancel',
+        'callback_data' => '/cancel',
+    ];
+
+    return [
+        'reply_markup' => [
+            'inline_keyboard' => [$buttons],
+        ],
+    ];
+}
+
+function contact_trace_answer_telegram_callback_query_local(string $botToken, string $callbackQueryId): void
+{
+    contact_trace_telegram_api_request($botToken, 'answerCallbackQuery', [
+        'callback_query_id' => $callbackQueryId,
+    ]);
 }
 
 function contact_trace_telegram_add_normalize_answer(string $field, string $text, array $definition): array

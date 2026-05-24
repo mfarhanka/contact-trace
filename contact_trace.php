@@ -1059,7 +1059,7 @@ function contact_trace_get_telegram_updates(string $botToken, int $offset = 0, i
 {
     $payload = [
         'timeout' => max(0, min($timeout, 50)),
-        'allowed_updates' => ['message', 'edited_message'],
+        'allowed_updates' => ['message', 'edited_message', 'callback_query'],
     ];
 
     if ($offset > 0) {
@@ -1069,12 +1069,25 @@ function contact_trace_get_telegram_updates(string $botToken, int $offset = 0, i
     return contact_trace_telegram_api_request($botToken, 'getUpdates', $payload);
 }
 
-function contact_trace_send_telegram_message(string $botToken, string $chatId, string $text): void
+function contact_trace_send_telegram_message(string $botToken, string $chatId, string $text, array $options = []): void
 {
-    contact_trace_telegram_api_request($botToken, 'sendMessage', [
+    contact_trace_telegram_api_request($botToken, 'sendMessage', array_merge([
         'chat_id' => $chatId,
         'text' => $text,
-    ]);
+    ], $options));
+}
+
+function contact_trace_answer_telegram_callback_query(string $botToken, string $callbackQueryId, string $text = ''): void
+{
+    $payload = [
+        'callback_query_id' => $callbackQueryId,
+    ];
+
+    if ($text !== '') {
+        $payload['text'] = $text;
+    }
+
+    contact_trace_telegram_api_request($botToken, 'answerCallbackQuery', $payload);
 }
 
 function contact_trace_telegram_alert_chat_ids(): array
