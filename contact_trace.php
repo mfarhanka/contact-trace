@@ -481,15 +481,16 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
 {
     $ownerName = trim((string) ($input['owner_name'] ?? ''));
     $telegramHandle = contact_trace_normalize_telegram_handle((string) ($input['telegram_handle'] ?? ''));
-    $phoneDisplay = trim((string) ($input['phone_display'] ?? ''));
-    $phoneNormalized = contact_trace_normalize_whatsapp_phone($phoneDisplay);
+    $phoneInput = trim((string) ($input['phone_display'] ?? ''));
+    $phoneNormalized = contact_trace_normalize_whatsapp_phone($phoneInput);
+    $phoneDisplay = $phoneNormalized;
     $adUrl = contact_trace_normalize_ad_url((string) ($input['ad_url'] ?? ''));
     $serviceOffer = trim((string) ($input['service_offer'] ?? ''));
     $latestReply = trim((string) ($input['latest_reply'] ?? ''));
     $notes = trim((string) ($input['notes'] ?? ''));
     $status = contact_trace_validate_status((string) ($input['status'] ?? 'contacted'));
 
-    if ($phoneDisplay === '' || $phoneNormalized === '' || $adUrl === '') {
+    if ($phoneInput === '' || $phoneNormalized === '' || $adUrl === '') {
         throw new InvalidArgumentException('Phone number and ad link are required.');
     }
 

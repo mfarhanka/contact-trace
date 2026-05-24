@@ -162,7 +162,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                 <div>
                                     <label for="phone_display" class="form-label">Phone number</label>
                                     <input id="phone_display" type="text" name="phone_display" class="form-control" placeholder="012-3456789" inputmode="tel" required>
-                                    <div class="form-text">WhatsApp links auto-convert local numbers like 012-3456789 to 60123456789.</div>
+                                    <div class="form-text">Local numbers like 0107744530 are saved in WhatsApp format as 60107744530.</div>
                                 </div>
 
                                 <div>
