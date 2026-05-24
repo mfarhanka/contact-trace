@@ -325,6 +325,14 @@ function contact_trace_find_admin_user_by_username(PDO $pdo, string $username): 
     return is_array($user) ? $user : null;
 }
 
+function contact_trace_list_admin_users(PDO $pdo): array
+{
+    $statement = $pdo->query('SELECT * FROM admin_users ORDER BY username ASC');
+    $users = $statement === false ? [] : $statement->fetchAll();
+
+    return is_array($users) ? $users : [];
+}
+
 function contact_trace_create_admin_user(PDO $pdo, string $username, string $password): int
 {
     $normalizedUsername = contact_trace_validate_admin_username($username);
@@ -363,6 +371,51 @@ function contact_trace_create_admin_user(PDO $pdo, string $username, string $pas
     ]);
 
     return (int) $pdo->lastInsertId();
+}
+
+function contact_trace_update_admin_user_password(PDO $pdo, int $userId, string $password): void
+{
+    $user = contact_trace_find_admin_user_by_id($pdo, $userId);
+
+    if ($user === null) {
+        throw new InvalidArgumentException('Admin user not found.');
+    }
+
+    $validatedPassword = contact_trace_validate_admin_password($password);
+    $passwordHash = password_hash($validatedPassword, PASSWORD_DEFAULT);
+
+    if (!is_string($passwordHash) || $passwordHash === '') {
+        throw new RuntimeException('Unable to secure the password.');
+    }
+
+    $statement = $pdo->prepare(
+        'UPDATE admin_users
+         SET password_hash = :password_hash,
+             updated_at = :updated_at
+         WHERE id = :id'
+    );
+
+    $statement->execute([
+        ':id' => $userId,
+        ':password_hash' => $passwordHash,
+        ':updated_at' => date('c'),
+    ]);
+}
+
+function contact_trace_delete_admin_user(PDO $pdo, int $userId): void
+{
+    $user = contact_trace_find_admin_user_by_id($pdo, $userId);
+
+    if ($user === null) {
+        throw new InvalidArgumentException('Admin user not found.');
+    }
+
+    if (contact_trace_count_admin_users($pdo) <= 1) {
+        throw new RuntimeException('You must keep at least one admin user.');
+    }
+
+    $statement = $pdo->prepare('DELETE FROM admin_users WHERE id = :id');
+    $statement->execute([':id' => $userId]);
 }
 
 function contact_trace_verify_admin_credentials(PDO $pdo, string $username, string $password): ?array

@@ -153,6 +153,17 @@ function whatsapp_bridge_status_summary(array $info): string
     return implode(' ', $parts);
 }
 
+function format_admin_timestamp(string $value): string
+{
+    $timestamp = strtotime($value);
+
+    if ($timestamp === false) {
+        return $value;
+    }
+
+    return date('Y-m-d H:i', $timestamp);
+}
+
 if (isset($_GET['message'])) {
     $message = trim((string) $_GET['message']);
     $messageType = $_GET['type'] === 'error' ? 'error' : 'success';
@@ -236,6 +247,40 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         redirect_with_feedback('New admin user added.', 'success');
     }
 
+    if ($action === 'reset_admin_password') {
+        $userId = (int) ($_POST['user_id'] ?? 0);
+        $password = (string) ($_POST['password'] ?? '');
+        $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+        if ($password !== $confirmPassword) {
+            redirect_with_feedback('Reset passwords do not match.', 'error');
+        }
+
+        try {
+            contact_trace_update_admin_user_password($pdo, $userId, $password);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback('Admin password updated.', 'success');
+    }
+
+    if ($action === 'delete_admin_user') {
+        $userId = (int) ($_POST['user_id'] ?? 0);
+
+        if ($currentAdminUser !== null && $userId === (int) $currentAdminUser['id']) {
+            redirect_with_feedback('Use another admin account to remove this one.', 'error');
+        }
+
+        try {
+            contact_trace_delete_admin_user($pdo, $userId);
+        } catch (Throwable $exception) {
+            redirect_with_feedback($exception->getMessage(), 'error');
+        }
+
+        redirect_with_feedback('Admin user removed.', 'success');
+    }
+
     $currentSettings = contact_trace_current_manageable_settings();
     $telegramBotToken = $currentSettings['TELEGRAM_BOT_TOKEN'];
 
@@ -294,6 +339,7 @@ $maskedBotToken = mask_secret($telegramBotToken);
 $maskedWhatsAppBridgeToken = mask_secret($whatsAppBridgeToken);
 $whatsAppBridgeInfo = null;
 $whatsAppBridgeError = '';
+$adminUsers = contact_trace_list_admin_users($pdo);
 
 if ($isAuthenticated && $whatsAppBridgeReady) {
     try {
@@ -440,6 +486,65 @@ if ($isAuthenticated && $whatsAppBridgeReady) {
                                 <button type="submit" class="btn btn-outline-primary">Add user</button>
                             </div>
                         </form>
+
+                        <div class="border-top pt-4 mt-4">
+                            <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                                <div>
+                                    <h3 class="h6 mb-1">Existing admin users</h3>
+                                    <p class="text-secondary small mb-0">Reset passwords here or remove an account when it should no longer access the admin page.</p>
+                                </div>
+                                <div class="small text-secondary">
+                                    <div>Last admin cannot be deleted.</div>
+                                    <div>You cannot delete the account you are using now.</div>
+                                </div>
+                            </div>
+
+                            <div class="vstack gap-3">
+                                <?php foreach ($adminUsers as $adminUser): ?>
+                                    <?php
+                                    $listedAdminId = (int) ($adminUser['id'] ?? 0);
+                                    $isCurrentListedAdmin = $currentAdminUser !== null && $listedAdminId === (int) $currentAdminUser['id'];
+                                    $deleteDisabled = $adminUserCount <= 1 || $isCurrentListedAdmin;
+                                    ?>
+                                    <div class="border rounded p-3 bg-body-tertiary">
+                                        <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                                            <div>
+                                                <div class="fw-semibold">
+                                                    <?= escape((string) ($adminUser['username'] ?? '')) ?>
+                                                    <?php if ($isCurrentListedAdmin): ?>
+                                                        <span class="badge text-bg-primary ms-2">Current session</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div class="small text-secondary">Created <?= escape(format_admin_timestamp((string) ($adminUser['created_at'] ?? ''))) ?></div>
+                                                <div class="small text-secondary">Updated <?= escape(format_admin_timestamp((string) ($adminUser['updated_at'] ?? ''))) ?></div>
+                                            </div>
+                                            <form method="post" class="d-grid d-lg-block" onsubmit="return confirm('Delete admin user <?= escape((string) ($adminUser['username'] ?? '')) ?>?');">
+                                                <input type="hidden" name="action" value="delete_admin_user">
+                                                <input type="hidden" name="user_id" value="<?= $listedAdminId ?>">
+                                                <button type="submit" class="btn btn-outline-danger" <?= $deleteDisabled ? 'disabled' : '' ?>>Delete user</button>
+                                            </form>
+                                        </div>
+
+                                        <form method="post" class="row g-3 align-items-end">
+                                            <input type="hidden" name="action" value="reset_admin_password">
+                                            <input type="hidden" name="user_id" value="<?= $listedAdminId ?>">
+
+                                            <div class="col-12 col-lg-4">
+                                                <label for="reset_password_<?= $listedAdminId ?>" class="form-label">New password</label>
+                                                <input id="reset_password_<?= $listedAdminId ?>" type="password" name="password" class="form-control" autocomplete="new-password" required>
+                                            </div>
+                                            <div class="col-12 col-lg-4">
+                                                <label for="reset_confirm_password_<?= $listedAdminId ?>" class="form-label">Confirm password</label>
+                                                <input id="reset_confirm_password_<?= $listedAdminId ?>" type="password" name="confirm_password" class="form-control" autocomplete="new-password" required>
+                                            </div>
+                                            <div class="col-12 col-lg-4 d-grid">
+                                                <button type="submit" class="btn btn-outline-secondary">Reset password</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

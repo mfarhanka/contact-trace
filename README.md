@@ -21,6 +21,7 @@ Simple PHP + SQLite tool to track outreach leads from listings like Mudah.
 2. On the first visit, create the first admin username and password to secure the page.
 3. On later visits, log in with that admin account before changing Telegram or WhatsApp settings.
 4. After logging in, use the same admin page to create another admin user when you want to share access.
+5. The admin page also lists existing admin users so you can reset a password or remove an account when needed.
 
 ## Telegram bot
 
