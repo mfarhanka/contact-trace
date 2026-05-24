@@ -397,13 +397,62 @@ function contact_trace_validate_status(string $status): string
     return $cleanStatus;
 }
 
+function contact_trace_normalize_ad_url(string $adUrl): string
+{
+    $cleanUrl = trim($adUrl);
+
+    if ($cleanUrl === '') {
+        return '';
+    }
+
+    return rtrim($cleanUrl, '/');
+}
+
+function contact_trace_find_duplicate_lead(PDO $pdo, string $phoneNormalized, string $adUrl): ?array
+{
+    $statement = $pdo->prepare(
+        'SELECT *
+         FROM leads
+         WHERE phone_normalized = :phone_normalized
+            OR ad_url = :ad_url
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1'
+    );
+    $statement->execute([
+        ':phone_normalized' => $phoneNormalized,
+        ':ad_url' => $adUrl,
+    ]);
+    $lead = $statement->fetch();
+
+    return is_array($lead) ? $lead : null;
+}
+
+function contact_trace_duplicate_lead_message(array $duplicateLead, string $phoneNormalized, string $adUrl): string
+{
+    $reasons = [];
+
+    if ((string) ($duplicateLead['phone_normalized'] ?? '') === $phoneNormalized) {
+        $reasons[] = 'contact number already exists';
+    }
+
+    if ((string) ($duplicateLead['ad_url'] ?? '') === $adUrl) {
+        $reasons[] = 'ad URL already exists';
+    }
+
+    if ($reasons === []) {
+        $reasons[] = 'matching lead already exists';
+    }
+
+    return 'Duplicate lead: ' . implode(' and ', $reasons) . ' for lead #' . (int) ($duplicateLead['id'] ?? 0) . '.';
+}
+
 function contact_trace_add_lead(PDO $pdo, array $input): int
 {
     $ownerName = trim((string) ($input['owner_name'] ?? ''));
     $telegramHandle = contact_trace_normalize_telegram_handle((string) ($input['telegram_handle'] ?? ''));
     $phoneDisplay = trim((string) ($input['phone_display'] ?? ''));
     $phoneNormalized = contact_trace_normalize_whatsapp_phone($phoneDisplay);
-    $adUrl = trim((string) ($input['ad_url'] ?? ''));
+    $adUrl = contact_trace_normalize_ad_url((string) ($input['ad_url'] ?? ''));
     $serviceOffer = trim((string) ($input['service_offer'] ?? ''));
     $latestReply = trim((string) ($input['latest_reply'] ?? ''));
     $notes = trim((string) ($input['notes'] ?? ''));
@@ -415,6 +464,12 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
 
     if (!filter_var($adUrl, FILTER_VALIDATE_URL)) {
         throw new InvalidArgumentException('Please enter a valid ad link.');
+    }
+
+    $duplicateLead = contact_trace_find_duplicate_lead($pdo, $phoneNormalized, $adUrl);
+
+    if ($duplicateLead !== null) {
+        throw new InvalidArgumentException(contact_trace_duplicate_lead_message($duplicateLead, $phoneNormalized, $adUrl));
     }
 
     $timestamp = date('c');
