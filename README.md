@@ -28,7 +28,7 @@ You can control the same leads database through a Telegram bot running in local 
 
 1. Set these environment variables for Apache or your local runtime:
 	- `TELEGRAM_BOT_TOKEN`: your bot token from BotFather.
-	- `TELEGRAM_ALLOWED_CHAT_IDS`: optional comma-separated chat IDs allowed to use the bot.
+	- `TELEGRAM_ALLOWED_CHAT_IDS`: optional comma-separated chat IDs allowed to use the bot. These same chat IDs also receive alerts when a lead reply or status is updated from the web app.
 2. Instead of Apache environment variables, you can also create a local `.env` file in the project root. Start from `.env.example` and fill in your values there.
 3. Open `admin.php` in the browser and use the Telegram admin page to save the bot token and allowed chat IDs into `.env`.
 4. Start the local polling worker from the project folder:

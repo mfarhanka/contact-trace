@@ -70,13 +70,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'update_lead') {
         $id = (int) ($_POST['id'] ?? 0);
         $search = trim((string) ($_POST['search'] ?? ''));
+
+        $existingLead = contact_trace_find_lead($pdo, $id);
+
+        if ($existingLead === null) {
+            redirect_with_feedback('Lead not found.', 'error', $search);
+        }
+
         try {
-            contact_trace_update_lead($pdo, $id, $_POST);
+            $updatedLead = contact_trace_update_lead($pdo, $id, $_POST);
         } catch (InvalidArgumentException $exception) {
             redirect_with_feedback($exception->getMessage(), 'error', $search);
         }
 
-        redirect_with_feedback('Lead updated.', 'success', $search);
+        $feedback = 'Lead updated.';
+
+        try {
+            $alertResult = contact_trace_send_lead_update_telegram_alert($existingLead, $updatedLead);
+
+            if (($alertResult['sent'] ?? false) === true) {
+                $chatCount = (int) ($alertResult['chat_count'] ?? 1);
+                $feedback .= ' Telegram alert sent to ' . $chatCount . ' chat' . ($chatCount === 1 ? '' : 's') . '.';
+            }
+        } catch (Throwable $exception) {
+            $feedback .= ' Telegram alert failed: ' . $exception->getMessage();
+        }
+
+        redirect_with_feedback($feedback, 'success', $search);
     }
 
     if ($action === 'delete_lead') {

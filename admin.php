@@ -582,7 +582,7 @@ if ($isAuthenticated && $whatsAppBridgeReady) {
                                     value="<?= escape($telegramAllowedChatIds) ?>"
                                     placeholder="123456789,-1001234567890"
                                 >
-                                <div class="form-text">Optional comma-separated chat IDs allowed to use the bot.</div>
+                                <div class="form-text">Optional comma-separated chat IDs allowed to use the bot. The same chat IDs also receive reply and status update alerts.</div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Local polling command</label>

@@ -463,7 +463,7 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
     return (int) $pdo->lastInsertId();
 }
 
-function contact_trace_update_lead(PDO $pdo, int $id, array $input): void
+function contact_trace_update_lead(PDO $pdo, int $id, array $input): array
 {
     if ($id <= 0) {
         throw new InvalidArgumentException('Lead update failed.');
@@ -485,6 +485,14 @@ function contact_trace_update_lead(PDO $pdo, int $id, array $input): void
         ':updated_at' => date('c'),
         ':id' => $id,
     ]);
+
+    $lead = contact_trace_find_lead($pdo, $id);
+
+    if ($lead === null) {
+        throw new RuntimeException('Lead update failed.');
+    }
+
+    return $lead;
 }
 
 function contact_trace_search_leads(PDO $pdo, string $searchTerm, int $limit = 20): array
@@ -705,6 +713,99 @@ function contact_trace_send_telegram_message(string $botToken, string $chatId, s
         'chat_id' => $chatId,
         'text' => $text,
     ]);
+}
+
+function contact_trace_telegram_alert_chat_ids(): array
+{
+    $values = array_map(
+        static fn (string $value): string => trim($value),
+        explode(',', contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS'))
+    );
+
+    $chatIds = array_values(array_filter($values, static fn (string $value): bool => $value !== ''));
+
+    return array_values(array_unique($chatIds));
+}
+
+function contact_trace_format_lead_update_alert(array $beforeLead, array $afterLead): string
+{
+    $leadId = (int) ($afterLead['id'] ?? 0);
+    $leadName = trim((string) ($afterLead['owner_name'] ?? ''));
+    $phone = trim((string) ($afterLead['phone_display'] ?? ''));
+    $title = $leadName !== '' ? $leadName : $phone;
+    $lines = ['Lead updated: #' . $leadId . ' ' . $title];
+
+    if ($phone !== '') {
+        $lines[] = 'Phone: ' . $phone;
+    }
+
+    $beforeStatus = trim((string) ($beforeLead['status'] ?? ''));
+    $afterStatus = trim((string) ($afterLead['status'] ?? ''));
+
+    if ($beforeStatus !== $afterStatus) {
+        $lines[] = 'Status: ' . ($beforeStatus !== '' ? $beforeStatus : 'none') . ' -> ' . ($afterStatus !== '' ? $afterStatus : 'none');
+    } elseif ($afterStatus !== '') {
+        $lines[] = 'Status: ' . $afterStatus;
+    }
+
+    $beforeReply = trim((string) ($beforeLead['latest_reply'] ?? ''));
+    $afterReply = trim((string) ($afterLead['latest_reply'] ?? ''));
+
+    if ($beforeReply !== $afterReply) {
+        $lines[] = 'Reply: ' . ($afterReply !== '' ? contact_trace_truncate_text($afterReply, 240) : '(cleared)');
+    }
+
+    $adUrl = trim((string) ($afterLead['ad_url'] ?? ''));
+
+    if ($adUrl !== '') {
+        $lines[] = 'Ad: ' . contact_trace_truncate_text($adUrl, 120);
+    }
+
+    return implode("\n", $lines);
+}
+
+function contact_trace_send_lead_update_telegram_alert(array $beforeLead, array $afterLead): array
+{
+    $beforeStatus = trim((string) ($beforeLead['status'] ?? ''));
+    $afterStatus = trim((string) ($afterLead['status'] ?? ''));
+    $beforeReply = trim((string) ($beforeLead['latest_reply'] ?? ''));
+    $afterReply = trim((string) ($afterLead['latest_reply'] ?? ''));
+
+    if ($beforeStatus === $afterStatus && $beforeReply === $afterReply) {
+        return [
+            'sent' => false,
+            'reason' => 'No reply or status change.',
+        ];
+    }
+
+    $botToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
+
+    if ($botToken === '') {
+        return [
+            'sent' => false,
+            'reason' => 'Telegram bot token is missing.',
+        ];
+    }
+
+    $chatIds = contact_trace_telegram_alert_chat_ids();
+
+    if ($chatIds === []) {
+        return [
+            'sent' => false,
+            'reason' => 'No Telegram alert chat IDs configured.',
+        ];
+    }
+
+    $message = contact_trace_format_lead_update_alert($beforeLead, $afterLead);
+
+    foreach ($chatIds as $chatId) {
+        contact_trace_send_telegram_message($botToken, $chatId, $message);
+    }
+
+    return [
+        'sent' => true,
+        'chat_count' => count($chatIds),
+    ];
 }
 
 function contact_trace_whatsapp_bridge_is_configured(): bool
