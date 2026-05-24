@@ -149,8 +149,10 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                             <h2 class="h5 mb-1">Add lead</h2>
                             <p class="text-secondary small mb-4">Store one owner together with the phone and ad link.</p>
 
-                            <form method="post" class="vstack gap-3">
+                            <form method="post" class="vstack gap-3" id="addLeadForm" novalidate>
                                 <input type="hidden" name="action" value="add_lead">
+
+                                <div id="duplicateLeadAlert" class="alert alert-danger d-none mb-0" role="alert"></div>
 
                                 <div>
                                     <label for="owner_name" class="form-label">Owner name</label>
@@ -408,7 +410,123 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
 ></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    var addLeadForm = document.getElementById('addLeadForm');
+    var phoneInput = document.getElementById('phone_display');
+    var adUrlInput = document.getElementById('ad_url');
+    var duplicateAlert = document.getElementById('duplicateLeadAlert');
     var editLeadModal = document.getElementById('editLeadModal');
+    var duplicateCheckTimer = null;
+    var duplicateState = {
+        pending: false,
+        duplicate: false,
+        message: '',
+    };
+
+    function setDuplicateAlert(message) {
+        if (!duplicateAlert) {
+            return;
+        }
+
+        duplicateAlert.textContent = message;
+        duplicateAlert.classList.toggle('d-none', message === '');
+    }
+
+    function setDuplicateFieldState(hasDuplicate) {
+        if (phoneInput) {
+            phoneInput.classList.toggle('is-invalid', hasDuplicate);
+        }
+
+        if (adUrlInput) {
+            adUrlInput.classList.toggle('is-invalid', hasDuplicate);
+        }
+    }
+
+    async function checkDuplicateLead() {
+        if (!phoneInput || !adUrlInput) {
+            return false;
+        }
+
+        var phoneValue = phoneInput.value.trim();
+        var adUrlValue = adUrlInput.value.trim();
+
+        if (phoneValue === '' && adUrlValue === '') {
+            duplicateState = { pending: false, duplicate: false, message: '' };
+            setDuplicateAlert('');
+            setDuplicateFieldState(false);
+            return false;
+        }
+
+        duplicateState.pending = true;
+
+        try {
+            var url = new URL('duplicate-check.php', window.location.href);
+            url.searchParams.set('phone_display', phoneValue);
+            url.searchParams.set('ad_url', adUrlValue);
+
+            var response = await fetch(url.toString(), {
+                headers: { Accept: 'application/json' },
+            });
+            var payload = await response.json();
+
+            if (!payload.ok) {
+                throw new Error(payload.error || 'Unable to validate duplicate lead.');
+            }
+
+            duplicateState = {
+                pending: false,
+                duplicate: payload.duplicate === true,
+                message: payload.duplicate === true ? String(payload.message || 'Duplicate lead detected.') : '',
+            };
+        } catch (error) {
+            duplicateState = {
+                pending: false,
+                duplicate: false,
+                message: error instanceof Error ? error.message : String(error),
+            };
+        }
+
+        setDuplicateAlert(duplicateState.duplicate ? duplicateState.message : '');
+        setDuplicateFieldState(duplicateState.duplicate);
+
+        return duplicateState.duplicate;
+    }
+
+    function scheduleDuplicateCheck() {
+        if (duplicateCheckTimer) {
+            window.clearTimeout(duplicateCheckTimer);
+        }
+
+        duplicateCheckTimer = window.setTimeout(function () {
+            void checkDuplicateLead();
+        }, 250);
+    }
+
+    if (phoneInput) {
+        phoneInput.addEventListener('input', scheduleDuplicateCheck);
+        phoneInput.addEventListener('blur', function () {
+            void checkDuplicateLead();
+        });
+    }
+
+    if (adUrlInput) {
+        adUrlInput.addEventListener('input', scheduleDuplicateCheck);
+        adUrlInput.addEventListener('blur', function () {
+            void checkDuplicateLead();
+        });
+    }
+
+    if (addLeadForm) {
+        addLeadForm.addEventListener('submit', async function (event) {
+            var isDuplicate = await checkDuplicateLead();
+
+            if (isDuplicate) {
+                event.preventDefault();
+                if (duplicateAlert) {
+                    duplicateAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        });
+    }
 
     if (!editLeadModal) {
         return;
