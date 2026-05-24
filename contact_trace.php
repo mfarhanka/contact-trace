@@ -410,64 +410,45 @@ function contact_trace_normalize_ad_url(string $adUrl): string
 
 function contact_trace_find_duplicate_lead(PDO $pdo, string $phoneNormalized, string $adUrl): ?array
 {
-    $statement = $pdo->prepare(
-        'SELECT *
-         FROM leads
-         WHERE phone_normalized = :phone_normalized
-            OR ad_url = :ad_url
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 1'
-    );
-    $statement->execute([
-        ':phone_normalized' => $phoneNormalized,
-        ':ad_url' => $adUrl,
-    ]);
-    $lead = $statement->fetch();
-
-    return is_array($lead) ? $lead : null;
+    return contact_trace_find_duplicate_lead_partial($pdo, $phoneNormalized, $adUrl);
 }
 
 function contact_trace_find_duplicate_lead_partial(PDO $pdo, string $phoneNormalized = '', string $adUrl = ''): ?array
 {
-    $conditions = [];
-    $params = [];
+    $normalizedAdUrl = contact_trace_normalize_ad_url($adUrl);
+    $phoneCandidates = $phoneNormalized !== '' ? contact_trace_phone_lookup_candidates($phoneNormalized) : [];
+    $statement = $pdo->query(
+        'SELECT *
+         FROM leads
+         ORDER BY updated_at DESC, id DESC'
+    );
 
-    if ($phoneNormalized !== '') {
-        $conditions[] = 'phone_normalized = :phone_normalized';
-        $params[':phone_normalized'] = $phoneNormalized;
-    }
-
-    if ($adUrl !== '') {
-        $conditions[] = 'ad_url = :ad_url';
-        $params[':ad_url'] = $adUrl;
-    }
-
-    if ($conditions === []) {
+    if ($statement === false) {
         return null;
     }
 
-    $statement = $pdo->prepare(
-        'SELECT *
-         FROM leads
-         WHERE ' . implode(' OR ', $conditions) . '
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 1'
-    );
-    $statement->execute($params);
-    $lead = $statement->fetch();
+    foreach ($statement->fetchAll() as $lead) {
+        if (!is_array($lead)) {
+            continue;
+        }
 
-    return is_array($lead) ? $lead : null;
+        if (contact_trace_lead_has_duplicate_phone($lead, $phoneCandidates) || contact_trace_lead_has_duplicate_url($lead, $normalizedAdUrl)) {
+            return $lead;
+        }
+    }
+
+    return null;
 }
 
 function contact_trace_duplicate_lead_message(array $duplicateLead, string $phoneNormalized, string $adUrl): string
 {
     $reasons = [];
 
-    if ((string) ($duplicateLead['phone_normalized'] ?? '') === $phoneNormalized) {
+    if (contact_trace_lead_has_duplicate_phone($duplicateLead, contact_trace_phone_lookup_candidates($phoneNormalized))) {
         $reasons[] = 'contact number already exists';
     }
 
-    if ((string) ($duplicateLead['ad_url'] ?? '') === $adUrl) {
+    if (contact_trace_lead_has_duplicate_url($duplicateLead, contact_trace_normalize_ad_url($adUrl))) {
         $reasons[] = 'ad URL already exists';
     }
 
@@ -476,6 +457,24 @@ function contact_trace_duplicate_lead_message(array $duplicateLead, string $phon
     }
 
     return 'Duplicate lead: ' . implode(' and ', $reasons) . ' for lead #' . (int) ($duplicateLead['id'] ?? 0) . '.';
+}
+
+function contact_trace_lead_has_duplicate_phone(array $lead, array $phoneCandidates): bool
+{
+    if ($phoneCandidates === []) {
+        return false;
+    }
+
+    return contact_trace_score_lead_phone_match($lead, $phoneCandidates) >= 80;
+}
+
+function contact_trace_lead_has_duplicate_url(array $lead, string $adUrl): bool
+{
+    if ($adUrl === '') {
+        return false;
+    }
+
+    return contact_trace_normalize_ad_url((string) ($lead['ad_url'] ?? '')) === $adUrl;
 }
 
 function contact_trace_add_lead(PDO $pdo, array $input): int

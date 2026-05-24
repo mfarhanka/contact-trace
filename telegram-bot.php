@@ -321,7 +321,7 @@ function contact_trace_telegram_add_duplicate_message(PDO $pdo, string $currentF
         $adUrl = contact_trace_normalize_ad_url((string) ($payload['ad_url'] ?? ''));
     }
 
-    $duplicateLead = contact_trace_find_telegram_duplicate_lead_partial($pdo, $phoneNormalized, $adUrl);
+    $duplicateLead = contact_trace_find_duplicate_lead($pdo, $phoneNormalized, $adUrl);
 
     if ($duplicateLead === null) {
         return null;
@@ -332,38 +332,6 @@ function contact_trace_telegram_add_duplicate_message(PDO $pdo, string $currentF
     }
 
     return contact_trace_duplicate_lead_message($duplicateLead, $phoneNormalized, $adUrl);
-}
-
-function contact_trace_find_telegram_duplicate_lead_partial(PDO $pdo, string $phoneNormalized = '', string $adUrl = ''): ?array
-{
-    $conditions = [];
-    $params = [];
-
-    if ($phoneNormalized !== '') {
-        $conditions[] = 'phone_normalized = :phone_normalized';
-        $params[':phone_normalized'] = $phoneNormalized;
-    }
-
-    if ($adUrl !== '') {
-        $conditions[] = 'ad_url = :ad_url';
-        $params[':ad_url'] = $adUrl;
-    }
-
-    if ($conditions === []) {
-        return null;
-    }
-
-    $statement = $pdo->prepare(
-        'SELECT *
-         FROM leads
-         WHERE ' . implode(' OR ', $conditions) . '
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 1'
-    );
-    $statement->execute($params);
-    $lead = $statement->fetch();
-
-    return is_array($lead) ? $lead : null;
 }
 
 function contact_trace_parse_add_command(string $payload): array
