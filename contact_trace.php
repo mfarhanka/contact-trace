@@ -214,6 +214,58 @@ function contact_trace_ensure_schema(PDO $pdo): void
     if (!in_array('telegram_handle', $columnNames, true)) {
         $pdo->exec("ALTER TABLE leads ADD COLUMN telegram_handle TEXT NOT NULL DEFAULT ''");
     }
+
+    contact_trace_normalize_saved_lead_phone_numbers($pdo);
+}
+
+function contact_trace_normalize_saved_lead_phone_numbers(PDO $pdo): void
+{
+    $statement = $pdo->query('SELECT id, phone_display, phone_normalized FROM leads');
+
+    if ($statement === false) {
+        return;
+    }
+
+    $rows = $statement->fetchAll();
+
+    if ($rows === []) {
+        return;
+    }
+
+    $updateStatement = $pdo->prepare(
+        'UPDATE leads
+         SET phone_display = :phone_display,
+             phone_normalized = :phone_normalized
+         WHERE id = :id'
+    );
+
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $sourcePhone = trim((string) ($row['phone_display'] ?? ''));
+
+        if ($sourcePhone === '') {
+            $sourcePhone = trim((string) ($row['phone_normalized'] ?? ''));
+        }
+
+        $normalizedPhone = contact_trace_normalize_whatsapp_phone($sourcePhone);
+
+        if ($normalizedPhone === '') {
+            continue;
+        }
+
+        if ((string) ($row['phone_display'] ?? '') === $normalizedPhone && (string) ($row['phone_normalized'] ?? '') === $normalizedPhone) {
+            continue;
+        }
+
+        $updateStatement->execute([
+            ':id' => (int) ($row['id'] ?? 0),
+            ':phone_display' => $normalizedPhone,
+            ':phone_normalized' => $normalizedPhone,
+        ]);
+    }
 }
 
 function contact_trace_allowed_statuses(): array
