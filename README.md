@@ -52,14 +52,14 @@ The app can also send a WhatsApp message automatically right after a lead is add
 1. Set these values in `.env` or save them from `admin.php`:
 	- `WHATSAPP_BRIDGE_URL`: default `http://127.0.0.1:3001`
 	- `WHATSAPP_BRIDGE_TOKEN`: any long random secret shared between PHP and the bridge
-	- `WHATSAPP_AUTO_MESSAGE_TEMPLATE`: the message sent after Telegram saves a lead
+	- `WHATSAPP_AUTO_MESSAGE_TEMPLATE`: one or more messages sent after Telegram saves a lead
 2. Install and start the bridge:
 	- `cd whatsapp-bridge`
 	- `npm install`
 	- `npm start`
-3. Open `admin.php`, save the bridge URL, token, and auto message template.
+3. Open `admin.php`, save the bridge URL, token, and auto message template(s). Separate each message with a line that only contains `---`.
 4. Click `Open QR dashboard` in the admin page and scan the QR code using WhatsApp on your phone.
-5. Use `/add` in Telegram. After the lead is saved, the bot will attempt to send the WhatsApp template to that lead automatically.
+5. Use `/add` in Telegram. After the lead is saved, the bot will attempt to send each WhatsApp template to that lead automatically, waiting 5 seconds between messages.
 
 Template placeholders:
 

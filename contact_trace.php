@@ -849,11 +849,33 @@ function contact_trace_render_whatsapp_template(string $template, array $lead): 
     return trim(strtr($template, $replacements));
 }
 
+function contact_trace_parse_whatsapp_templates(string $templateSet): array
+{
+    $normalizedTemplateSet = str_replace(["\r\n", "\r"], "\n", $templateSet);
+    $parts = preg_split('/^\s*---\s*$/m', $normalizedTemplateSet);
+
+    if ($parts === false) {
+        $parts = [$normalizedTemplateSet];
+    }
+
+    $templates = [];
+
+    foreach ($parts as $part) {
+        $template = trim($part);
+
+        if ($template !== '') {
+            $templates[] = $template;
+        }
+    }
+
+    return $templates;
+}
+
 function contact_trace_send_whatsapp_auto_message_for_lead(array $lead): array
 {
-    $template = contact_trace_env('WHATSAPP_AUTO_MESSAGE_TEMPLATE');
+    $templateSet = contact_trace_env('WHATSAPP_AUTO_MESSAGE_TEMPLATE');
 
-    if ($template === '') {
+    if ($templateSet === '') {
         return [
             'sent' => false,
             'reason' => 'WhatsApp auto message template is empty.',
@@ -867,18 +889,45 @@ function contact_trace_send_whatsapp_auto_message_for_lead(array $lead): array
         ];
     }
 
-    $message = contact_trace_render_whatsapp_template($template, $lead);
+    $templates = contact_trace_parse_whatsapp_templates($templateSet);
 
-    if ($message === '') {
+    if ($templates === []) {
         return [
             'sent' => false,
-            'reason' => 'WhatsApp auto message rendered empty text.',
+            'reason' => 'WhatsApp auto message templates rendered empty text.',
         ];
     }
 
-    $result = contact_trace_send_whatsapp_message((string) ($lead['phone_display'] ?? ''), $message);
+    $messageTexts = [];
+    $result = [];
+    $templateCount = count($templates);
+
+    foreach ($templates as $index => $template) {
+        $message = contact_trace_render_whatsapp_template($template, $lead);
+
+        if ($message === '') {
+            continue;
+        }
+
+        $result = contact_trace_send_whatsapp_message((string) ($lead['phone_display'] ?? ''), $message);
+        $messageTexts[] = $message;
+
+        if ($index < $templateCount - 1) {
+            sleep(5);
+        }
+    }
+
+    if ($messageTexts === []) {
+        return [
+            'sent' => false,
+            'reason' => 'WhatsApp auto message templates rendered empty text.',
+        ];
+    }
+
     $result['sent'] = true;
-    $result['message_text'] = $message;
+    $result['message_text'] = implode("\n\n---\n\n", $messageTexts);
+    $result['message_texts'] = $messageTexts;
+    $result['message_count'] = count($messageTexts);
 
     return $result;
 }

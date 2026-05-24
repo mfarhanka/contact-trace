@@ -482,15 +482,15 @@ if ($isAuthenticated && $whatsAppBridgeReady) {
                                 <div class="form-text">Leave blank to keep the current token. PHP sends it on every bridge request.</div>
                             </div>
                             <div class="col-12">
-                                <label for="whatsapp_auto_message_template" class="form-label">Auto message template</label>
+                                <label for="whatsapp_auto_message_template" class="form-label">Auto message templates</label>
                                 <textarea
                                     id="whatsapp_auto_message_template"
                                     name="whatsapp_auto_message_template"
                                     class="form-control"
-                                    rows="4"
-                                    placeholder="Hi {{owner_name}}, I saw your ad {{ad_url}}."
+                                    rows="7"
+                                    placeholder="Hi {{owner_name}}, I saw your ad {{ad_url}}.&#10;---&#10;Is this still available on WhatsApp?&#10;---&#10;I can also help with {{service_offer}}."
                                 ><?= escape($whatsAppAutoMessageTemplate) ?></textarea>
-                                <div class="form-text">Available placeholders: {{owner_name}}, {{phone}}, {{ad_url}}, {{service_offer}}, {{latest_reply}}, {{notes}}, {{status}}.</div>
+                                <div class="form-text">Separate each message with a line that only contains --- . Telegram auto-send waits 5 seconds between messages. Available placeholders: {{owner_name}}, {{phone}}, {{ad_url}}, {{service_offer}}, {{latest_reply}}, {{notes}}, {{status}}.</div>
                             </div>
                             <div class="col-6 col-lg-3 d-grid">
                                 <button type="submit" name="action" value="save_whatsapp_settings" class="btn btn-outline-secondary">Save settings</button>
@@ -541,7 +541,7 @@ if ($isAuthenticated && $whatsAppBridgeReady) {
                         <?php if (!$whatsAppBridgeReady): ?>
                             <p class="small text-danger mb-0 mt-3">Save the bridge URL and token first, then start the bridge service so this page can load the QR.</p>
                         <?php elseif ($whatsAppAutoMessageTemplate === ''): ?>
-                            <p class="small text-danger mb-0 mt-3">Set an auto message template if you want Telegram adds to send a WhatsApp message automatically.</p>
+                            <p class="small text-danger mb-0 mt-3">Set one or more auto message templates if you want Telegram adds to send WhatsApp messages automatically.</p>
                         <?php endif; ?>
                     </div>
                 </div>

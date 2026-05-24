@@ -439,7 +439,9 @@ function contact_trace_telegram_add_success_text(int $leadId, array $lead): stri
 function contact_trace_telegram_whatsapp_auto_send_text(array $result): string
 {
     if (($result['sent'] ?? false) === true) {
-        return 'WhatsApp auto-send: sent.';
+        $messageCount = (int) ($result['message_count'] ?? 1);
+
+        return 'WhatsApp auto-send: sent ' . $messageCount . ' message' . ($messageCount === 1 ? '' : 's') . '.';
     }
 
     $reason = trim((string) ($result['reason'] ?? 'Not configured.'));
