@@ -43,13 +43,25 @@ function contact_trace_load_env_file(): void
         }
 
         if ((str_starts_with($value, '"') && str_ends_with($value, '"')) || (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
-            $value = substr($value, 1, -1);
+            $value = contact_trace_decode_env_value(substr($value, 1, -1));
         }
 
         putenv($name . '=' . $value);
         $_ENV[$name] = $value;
         $_SERVER[$name] = $value;
     }
+}
+
+function contact_trace_decode_env_value(string $value): string
+{
+    return strtr($value, [
+        '\\r' => "\r",
+        '\\n' => "\n",
+        '\\t' => "\t",
+        '\\\\' => '\\',
+        '\\"' => '"',
+        "\\'" => "'",
+    ]);
 }
 
 function contact_trace_env_file_path(): string
@@ -120,7 +132,13 @@ function contact_trace_encode_env_value(string $value): string
         return $value;
     }
 
-    return '"' . addcslashes($value, "\\\"") . '"';
+    return '"' . strtr($value, [
+        '\\' => '\\\\',
+        "\r" => '\\r',
+        "\n" => '\\n',
+        "\t" => '\\t',
+        '"' => '\\"',
+    ]) . '"';
 }
 
 function contact_trace_database_directory(): string
