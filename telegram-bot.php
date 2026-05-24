@@ -3,66 +3,89 @@ declare(strict_types=1);
 
 require __DIR__ . DIRECTORY_SEPARATOR . 'contact_trace.php';
 
-$botToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
-$allowedChatIds = array_values(array_filter(array_map(
-    static fn (string $value): string => trim($value),
-    explode(',', contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS'))
-)));
+if (contact_trace_telegram_bot_is_direct_execution()) {
+    $botToken = contact_trace_env('TELEGRAM_BOT_TOKEN');
 
-if ($botToken === '') {
-    http_response_code(500);
-    echo 'Missing TELEGRAM_BOT_TOKEN';
-    exit;
-}
+    if ($botToken === '') {
+        http_response_code(500);
+        echo 'Missing TELEGRAM_BOT_TOKEN';
+        exit;
+    }
 
-$rawBody = file_get_contents('php://input');
-$update = json_decode($rawBody !== false ? $rawBody : '', true);
+    $rawBody = file_get_contents('php://input');
+    $update = json_decode($rawBody !== false ? $rawBody : '', true);
 
-if (!is_array($update)) {
-    http_response_code(400);
-    echo 'Invalid update payload';
-    exit;
-}
+    if (!is_array($update)) {
+        http_response_code(400);
+        echo 'Invalid update payload';
+        exit;
+    }
 
-$message = $update['message'] ?? $update['edited_message'] ?? null;
+    contact_trace_process_telegram_update($update, $botToken);
 
-if (!is_array($message)) {
     echo 'ok';
-    exit;
 }
 
-$chatId = $message['chat']['id'] ?? null;
-$text = trim((string) ($message['text'] ?? ''));
+function contact_trace_telegram_bot_is_direct_execution(): bool
+{
+    $scriptFilename = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
 
-if (!is_int($chatId) && !is_string($chatId)) {
-    echo 'ok';
-    exit;
+    if ($scriptFilename === '') {
+        return true;
+    }
+
+    $resolvedScript = realpath($scriptFilename);
+
+    return $resolvedScript !== false && $resolvedScript === __FILE__;
 }
 
-$chatIdString = (string) $chatId;
+function contact_trace_process_telegram_update(array $update, ?string $botToken = null): void
+{
+    $resolvedBotToken = trim((string) ($botToken ?? contact_trace_env('TELEGRAM_BOT_TOKEN')));
 
-if ($allowedChatIds !== [] && !in_array($chatIdString, $allowedChatIds, true)) {
-    contact_trace_send_telegram_message($botToken, $chatIdString, 'Chat not allowed for this bot.');
-    echo 'ok';
-    exit;
+    if ($resolvedBotToken === '') {
+        throw new RuntimeException('Missing TELEGRAM_BOT_TOKEN');
+    }
+
+    $allowedChatIds = array_values(array_filter(array_map(
+        static fn (string $value): string => trim($value),
+        explode(',', contact_trace_env('TELEGRAM_ALLOWED_CHAT_IDS'))
+    )));
+
+    $message = $update['message'] ?? $update['edited_message'] ?? null;
+
+    if (!is_array($message)) {
+        return;
+    }
+
+    $chatId = $message['chat']['id'] ?? null;
+    $text = trim((string) ($message['text'] ?? ''));
+
+    if (!is_int($chatId) && !is_string($chatId)) {
+        return;
+    }
+
+    $chatIdString = (string) $chatId;
+
+    if ($allowedChatIds !== [] && !in_array($chatIdString, $allowedChatIds, true)) {
+        contact_trace_send_telegram_message($resolvedBotToken, $chatIdString, 'Chat not allowed for this bot.');
+        return;
+    }
+
+    if ($text === '') {
+        contact_trace_send_telegram_message($resolvedBotToken, $chatIdString, contact_trace_help_text());
+        return;
+    }
+
+    try {
+        $pdo = contact_trace_get_pdo();
+        $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text);
+    } catch (Throwable $exception) {
+        $reply = 'Error: ' . $exception->getMessage();
+    }
+
+    contact_trace_send_telegram_message($resolvedBotToken, $chatIdString, $reply);
 }
-
-if ($text === '') {
-    contact_trace_send_telegram_message($botToken, $chatIdString, contact_trace_help_text());
-    echo 'ok';
-    exit;
-}
-
-try {
-    $pdo = contact_trace_get_pdo();
-    $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text);
-} catch (Throwable $exception) {
-    $reply = 'Error: ' . $exception->getMessage();
-}
-
-contact_trace_send_telegram_message($botToken, $chatIdString, $reply);
-
-echo 'ok';
 
 function contact_trace_find_telegram_add_draft(PDO $pdo, string $chatId): ?array
 {

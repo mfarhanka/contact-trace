@@ -308,7 +308,7 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                     <div class="d-flex flex-column flex-md-row justify-content-md-between align-items-md-center gap-3">
                         <div>
                             <h2 class="h5 mb-1">Admin</h2>
-                            <p class="text-secondary small mb-0">Open the separate admin page to manage Telegram bot settings and webhook registration.</p>
+                            <p class="text-secondary small mb-0">Open the separate admin page to manage Telegram bot settings and the local polling worker.</p>
                         </div>
                         <div>
                             <a href="admin.php" class="btn btn-outline-primary">Open admin page</a>

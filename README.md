@@ -24,16 +24,19 @@ Simple PHP + SQLite tool to track outreach leads from listings like Mudah.
 
 ## Telegram bot
 
-You can control the same leads database through a Telegram bot webhook.
+You can control the same leads database through a Telegram bot running in local polling mode.
 
-1. Set these environment variables for Apache or your hosting runtime:
+1. Set these environment variables for Apache or your local runtime:
 	- `TELEGRAM_BOT_TOKEN`: your bot token from BotFather.
 	- `TELEGRAM_ALLOWED_CHAT_IDS`: optional comma-separated chat IDs allowed to use the bot.
-	- `APP_PUBLIC_URL`: optional public base URL such as `https://your-domain/contact-trace` used to prefill the webhook URL in the browser.
 2. Instead of Apache environment variables, you can also create a local `.env` file in the project root. Start from `.env.example` and fill in your values there.
-3. Expose the app on a public HTTPS URL. Telegram cannot call `localhost` directly.
-4. Open `admin.php` in the browser and use the Telegram admin page to save the bot token, allowed chat IDs, and public URL into `.env`, then register your webhook automatically.
-5. Send commands to your bot:
+3. Open `admin.php` in the browser and use the Telegram admin page to save the bot token and allowed chat IDs into `.env`.
+4. Start the local polling worker from the project folder:
+	- `C:\xampp\php\php.exe telegram-poll.php`
+	- Optional one-pass check: `C:\xampp\php\php.exe telegram-poll.php --once`
+	- Optional fresh start: `C:\xampp\php\php.exe telegram-poll.php --drop-pending`
+5. Keep that command running on the local machine where the project lives.
+6. Send commands to your bot:
 	- `/search keyword`
 	- `/delete 12`
 	- `/add` to answer one field at a time

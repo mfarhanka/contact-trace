@@ -660,6 +660,27 @@ function contact_trace_get_telegram_webhook_info(string $botToken): array
     return contact_trace_telegram_api_request($botToken, 'getWebhookInfo');
 }
 
+function contact_trace_delete_telegram_webhook(string $botToken, bool $dropPendingUpdates = false): array
+{
+    return contact_trace_telegram_api_request($botToken, 'deleteWebhook', [
+        'drop_pending_updates' => $dropPendingUpdates,
+    ]);
+}
+
+function contact_trace_get_telegram_updates(string $botToken, int $offset = 0, int $timeout = 25): array
+{
+    $payload = [
+        'timeout' => max(0, min($timeout, 50)),
+        'allowed_updates' => ['message', 'edited_message'],
+    ];
+
+    if ($offset > 0) {
+        $payload['offset'] = $offset;
+    }
+
+    return contact_trace_telegram_api_request($botToken, 'getUpdates', $payload);
+}
+
 function contact_trace_send_telegram_message(string $botToken, string $chatId, string $text): void
 {
     contact_trace_telegram_api_request($botToken, 'sendMessage', [
