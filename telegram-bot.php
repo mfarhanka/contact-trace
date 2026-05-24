@@ -59,6 +59,7 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
     }
 
     $chatId = $message['chat']['id'] ?? null;
+    $telegramUserId = $message['from']['id'] ?? null;
     $text = trim((string) ($message['text'] ?? ''));
 
     if (!is_int($chatId) && !is_string($chatId)) {
@@ -79,7 +80,7 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
 
     try {
         $pdo = contact_trace_get_pdo();
-        $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text);
+        $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text, $telegramUserId);
     } catch (Throwable $exception) {
         $reply = 'Error: ' . $exception->getMessage();
     }
@@ -154,7 +155,7 @@ function contact_trace_delete_telegram_add_draft(PDO $pdo, string $chatId): void
     $statement->execute([':chat_id' => $chatId]);
 }
 
-function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string $text): string
+function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string $text, int|string|null $telegramUserId = null): string
 {
     if (preg_match('~^/(?:start|help)(?:@\w+)?$~i', $text) === 1) {
         return contact_trace_help_text();
@@ -182,6 +183,10 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
                 return $error . "\n\n" . contact_trace_add_usage_text();
             }
 
+            if (is_int($telegramUserId) || is_string($telegramUserId)) {
+                $input['telegram_user_id'] = (string) $telegramUserId;
+            }
+
             $leadId = contact_trace_add_lead($pdo, $input);
             $lead = contact_trace_find_lead($pdo, $leadId);
 
@@ -189,7 +194,13 @@ function contact_trace_handle_telegram_command(PDO $pdo, string $chatId, string 
         }
 
         $firstField = contact_trace_telegram_add_first_field();
-        contact_trace_save_telegram_add_draft($pdo, $chatId, [], $firstField);
+        $draftPayload = [];
+
+        if (is_int($telegramUserId) || is_string($telegramUserId)) {
+            $draftPayload['telegram_user_id'] = (string) $telegramUserId;
+        }
+
+        contact_trace_save_telegram_add_draft($pdo, $chatId, $draftPayload, $firstField);
 
         return implode("\n\n", [
             'Let\'s add a lead step by step.',

@@ -175,6 +175,7 @@ function contact_trace_ensure_schema(PDO $pdo): void
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             owner_name TEXT NOT NULL DEFAULT \'\',
             telegram_handle TEXT NOT NULL DEFAULT \'\',
+            telegram_user_id TEXT NOT NULL DEFAULT \'\',
             phone_display TEXT NOT NULL,
             phone_normalized TEXT NOT NULL,
             ad_url TEXT NOT NULL,
@@ -213,6 +214,10 @@ function contact_trace_ensure_schema(PDO $pdo): void
 
     if (!in_array('telegram_handle', $columnNames, true)) {
         $pdo->exec("ALTER TABLE leads ADD COLUMN telegram_handle TEXT NOT NULL DEFAULT ''");
+    }
+
+    if (!in_array('telegram_user_id', $columnNames, true)) {
+        $pdo->exec("ALTER TABLE leads ADD COLUMN telegram_user_id TEXT NOT NULL DEFAULT ''");
     }
 
     contact_trace_normalize_saved_lead_phone_numbers($pdo);
@@ -586,6 +591,7 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
 {
     $ownerName = trim((string) ($input['owner_name'] ?? ''));
     $telegramHandle = contact_trace_normalize_telegram_handle((string) ($input['telegram_handle'] ?? ''));
+    $telegramUserId = trim((string) ($input['telegram_user_id'] ?? ''));
     $phoneInput = trim((string) ($input['phone_display'] ?? ''));
     $phoneNormalized = contact_trace_normalize_whatsapp_phone($phoneInput);
     $phoneDisplay = $phoneNormalized;
@@ -614,6 +620,7 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
         'INSERT INTO leads (
             owner_name,
             telegram_handle,
+            telegram_user_id,
             phone_display,
             phone_normalized,
             ad_url,
@@ -626,6 +633,7 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
         ) VALUES (
             :owner_name,
             :telegram_handle,
+            :telegram_user_id,
             :phone_display,
             :phone_normalized,
             :ad_url,
@@ -641,6 +649,7 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
     $statement->execute([
         ':owner_name' => $ownerName,
         ':telegram_handle' => $telegramHandle,
+        ':telegram_user_id' => $telegramUserId,
         ':phone_display' => $phoneDisplay,
         ':phone_normalized' => $phoneNormalized,
         ':ad_url' => $adUrl,
@@ -701,6 +710,7 @@ function contact_trace_search_leads(PDO $pdo, string $searchTerm, int $limit = 2
          WHERE phone_display LIKE :like_term
             OR phone_normalized LIKE :search_digits
             OR telegram_handle LIKE :like_term
+                OR telegram_user_id LIKE :like_term
             OR owner_name LIKE :like_term
             OR ad_url LIKE :like_term
             OR service_offer LIKE :like_term
