@@ -282,6 +282,12 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     }
 
     $payload[$currentField] = $value;
+    $duplicateMessage = contact_trace_telegram_add_duplicate_message($pdo, $currentField, $payload);
+
+    if ($duplicateMessage !== null) {
+        return $duplicateMessage . "\n\n" . contact_trace_telegram_add_prompt($currentField);
+    }
+
     $nextField = contact_trace_telegram_add_next_field($currentField);
 
     if ($nextField !== null) {
@@ -295,6 +301,69 @@ function contact_trace_continue_telegram_add_draft(PDO $pdo, string $chatId, arr
     $lead = contact_trace_find_lead($pdo, $leadId);
 
     return contact_trace_telegram_add_success_text($leadId, $lead ?? $payload);
+}
+
+function contact_trace_telegram_add_duplicate_message(PDO $pdo, string $currentField, array $payload): ?string
+{
+    if ($currentField !== 'ad_url' && $currentField !== 'phone_display') {
+        return null;
+    }
+
+    $phoneNormalized = '';
+    $adUrl = '';
+
+    if ($currentField === 'ad_url') {
+        $adUrl = contact_trace_normalize_ad_url((string) ($payload['ad_url'] ?? ''));
+    }
+
+    if ($currentField === 'phone_display') {
+        $phoneNormalized = contact_trace_normalize_whatsapp_phone((string) ($payload['phone_display'] ?? ''));
+        $adUrl = contact_trace_normalize_ad_url((string) ($payload['ad_url'] ?? ''));
+    }
+
+    $duplicateLead = contact_trace_find_telegram_duplicate_lead_partial($pdo, $phoneNormalized, $adUrl);
+
+    if ($duplicateLead === null) {
+        return null;
+    }
+
+    if ($currentField === 'ad_url') {
+        return contact_trace_duplicate_lead_message($duplicateLead, '', $adUrl);
+    }
+
+    return contact_trace_duplicate_lead_message($duplicateLead, $phoneNormalized, $adUrl);
+}
+
+function contact_trace_find_telegram_duplicate_lead_partial(PDO $pdo, string $phoneNormalized = '', string $adUrl = ''): ?array
+{
+    $conditions = [];
+    $params = [];
+
+    if ($phoneNormalized !== '') {
+        $conditions[] = 'phone_normalized = :phone_normalized';
+        $params[':phone_normalized'] = $phoneNormalized;
+    }
+
+    if ($adUrl !== '') {
+        $conditions[] = 'ad_url = :ad_url';
+        $params[':ad_url'] = $adUrl;
+    }
+
+    if ($conditions === []) {
+        return null;
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT *
+         FROM leads
+         WHERE ' . implode(' OR ', $conditions) . '
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1'
+    );
+    $statement->execute($params);
+    $lead = $statement->fetch();
+
+    return is_array($lead) ? $lead : null;
 }
 
 function contact_trace_parse_add_command(string $payload): array
@@ -408,7 +477,7 @@ function contact_trace_telegram_add_normalize_answer(string $field, string $text
             return ['', 'Please send a valid URL, for example https://example.com/ad'];
         }
 
-        return [$value, null];
+        return [contact_trace_normalize_ad_url($value), null];
     }
 
     if ($field === 'status') {

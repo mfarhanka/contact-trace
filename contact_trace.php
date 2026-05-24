@@ -427,6 +427,38 @@ function contact_trace_find_duplicate_lead(PDO $pdo, string $phoneNormalized, st
     return is_array($lead) ? $lead : null;
 }
 
+function contact_trace_find_duplicate_lead_partial(PDO $pdo, string $phoneNormalized = '', string $adUrl = ''): ?array
+{
+    $conditions = [];
+    $params = [];
+
+    if ($phoneNormalized !== '') {
+        $conditions[] = 'phone_normalized = :phone_normalized';
+        $params[':phone_normalized'] = $phoneNormalized;
+    }
+
+    if ($adUrl !== '') {
+        $conditions[] = 'ad_url = :ad_url';
+        $params[':ad_url'] = $adUrl;
+    }
+
+    if ($conditions === []) {
+        return null;
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT *
+         FROM leads
+         WHERE ' . implode(' OR ', $conditions) . '
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1'
+    );
+    $statement->execute($params);
+    $lead = $statement->fetch();
+
+    return is_array($lead) ? $lead : null;
+}
+
 function contact_trace_duplicate_lead_message(array $duplicateLead, string $phoneNormalized, string $adUrl): string
 {
     $reasons = [];
