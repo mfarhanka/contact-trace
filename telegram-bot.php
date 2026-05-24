@@ -92,8 +92,11 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
         return;
     }
 
+    $draftBefore = null;
+
     try {
         $pdo = contact_trace_get_pdo();
+        $draftBefore = contact_trace_find_telegram_add_draft($pdo, $chatIdString);
         $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text, $telegramUserId);
         $draft = contact_trace_find_telegram_add_draft($pdo, $chatIdString);
     } catch (Throwable $exception) {
@@ -109,8 +112,34 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
         $resolvedBotToken,
         $chatIdString,
         $reply,
-        contact_trace_telegram_add_reply_markup($draft)
+        contact_trace_telegram_reply_markup($text, $reply, $draftBefore, $draft)
     );
+}
+
+function contact_trace_telegram_reply_markup(string $text, string $reply, ?array $draftBefore, ?array $draftAfter): array
+{
+    $draftReplyMarkup = contact_trace_telegram_add_reply_markup($draftAfter);
+
+    if ($draftReplyMarkup !== []) {
+        return $draftReplyMarkup;
+    }
+
+    $startedAddFlow = $draftBefore !== null || preg_match('~^/add(?:@\w+)?(?:\s+.+)?$~is', $text) === 1;
+
+    if ($startedAddFlow && str_starts_with($reply, 'Lead saved with ID #')) {
+        return [
+            'reply_markup' => [
+                'inline_keyboard' => [[
+                    [
+                        'text' => 'Add',
+                        'callback_data' => '/add',
+                    ],
+                ]],
+            ],
+        ];
+    }
+
+    return [];
 }
 
 function contact_trace_find_telegram_add_draft(PDO $pdo, string $chatId): ?array
