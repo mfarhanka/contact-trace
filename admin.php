@@ -129,19 +129,6 @@ function telegram_webhook_status_summary(array $info): string
     return implode(' ', $parts);
 }
 
-function suggested_whatsapp_dashboard_url(): string
-{
-    $bridgeUrl = rtrim(contact_trace_env('WHATSAPP_BRIDGE_URL'), '/');
-
-    if ($bridgeUrl === '') {
-        return '';
-    }
-
-    $token = contact_trace_env('WHATSAPP_BRIDGE_TOKEN');
-
-    return $token !== '' ? $bridgeUrl . '/?token=' . rawurlencode($token) : $bridgeUrl . '/';
-}
-
 function whatsapp_bridge_status_summary(array $info): string
 {
     $state = trim((string) ($info['state'] ?? 'unknown'));
@@ -321,13 +308,22 @@ $whatsAppBridgeUrl = contact_trace_env('WHATSAPP_BRIDGE_URL');
 $whatsAppBridgeToken = contact_trace_env('WHATSAPP_BRIDGE_TOKEN');
 $whatsAppAutoMessageTemplate = contact_trace_env('WHATSAPP_AUTO_MESSAGE_TEMPLATE');
 $telegramWebhookUrl = suggested_telegram_webhook_url();
-$whatsAppDashboardUrl = suggested_whatsapp_dashboard_url();
 $telegramBotReady = $telegramBotToken !== '';
 $whatsAppBridgeReady = $whatsAppBridgeUrl !== '' && $whatsAppBridgeToken !== '';
 $isSuggestedWebhookPublic = current_request_scheme() === 'https' && stripos(current_request_host(), 'localhost') === false && current_request_host() !== '127.0.0.1';
 $isSuggestedWebhookPublic = $publicBaseUrl !== '' || $isSuggestedWebhookPublic;
 $maskedBotToken = mask_secret($telegramBotToken);
 $maskedWhatsAppBridgeToken = mask_secret($whatsAppBridgeToken);
+$whatsAppBridgeInfo = null;
+$whatsAppBridgeError = '';
+
+if ($isAuthenticated && $whatsAppBridgeReady) {
+    try {
+        $whatsAppBridgeInfo = contact_trace_get_whatsapp_bridge_status();
+    } catch (Throwable $exception) {
+        $whatsAppBridgeError = $exception->getMessage();
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -474,7 +470,7 @@ $maskedWhatsAppBridgeToken = mask_secret($whatsAppBridgeToken);
                         <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
                             <div>
                                 <h2 class="h5 mb-1">WhatsApp bridge</h2>
-                                <p class="text-secondary small mb-0">Configure the local QR bridge that keeps a WhatsApp Web session and sends the first message automatically after Telegram adds a lead.</p>
+                                <p class="text-secondary small mb-0">Configure the local service that keeps a WhatsApp Web session alive. The QR and live connection status are shown below on this page.</p>
                             </div>
                             <div class="small text-secondary">
                                 <div>Bridge URL: <?= escape($whatsAppBridgeUrl !== '' ? $whatsAppBridgeUrl : 'missing') ?></div>
@@ -524,17 +520,48 @@ $maskedWhatsAppBridgeToken = mask_secret($whatsAppBridgeToken);
                             <div class="col-6 col-lg-3 d-grid">
                                 <button type="submit" name="action" value="check_whatsapp_bridge" class="btn btn-outline-primary" <?= $whatsAppBridgeReady ? '' : 'disabled' ?>>Check status</button>
                             </div>
-                            <div class="col-12 col-lg-3 d-grid">
-                                <?php if ($whatsAppDashboardUrl !== ''): ?>
-                                    <a href="<?= escape($whatsAppDashboardUrl) ?>" target="_blank" rel="noreferrer" class="btn btn-outline-secondary">Open QR dashboard</a>
-                                <?php else: ?>
-                                    <button type="button" class="btn btn-outline-secondary" disabled>Open QR dashboard</button>
-                                <?php endif; ?>
-                            </div>
                         </form>
 
+                        <?php if ($whatsAppBridgeInfo !== null || $whatsAppBridgeError !== ''): ?>
+                            <div class="border rounded bg-body-tertiary p-3 mt-4">
+                                <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
+                                    <div>
+                                        <h3 class="h6 mb-1">Bridge live status</h3>
+                                        <?php if ($whatsAppBridgeInfo !== null): ?>
+                                            <p class="small text-secondary mb-0"><?= escape(whatsapp_bridge_status_summary($whatsAppBridgeInfo)) ?></p>
+                                        <?php else: ?>
+                                            <p class="small text-danger mb-0"><?= escape($whatsAppBridgeError) ?></p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($whatsAppBridgeInfo !== null): ?>
+                                        <div class="small text-secondary">
+                                            <div>State: <?= escape((string) ($whatsAppBridgeInfo['state'] ?? 'unknown')) ?></div>
+                                            <div>Connected: <?= ($whatsAppBridgeInfo['connected'] ?? false) ? 'yes' : 'no' ?></div>
+                                            <div>Client: <?= escape((string) ($whatsAppBridgeInfo['clientId'] ?? 'waiting')) ?></div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <?php if (($whatsAppBridgeInfo['qrAvailable'] ?? false) === true && ($whatsAppBridgeInfo['qrDataUrl'] ?? '') !== ''): ?>
+                                    <div class="text-center">
+                                        <img
+                                            src="<?= escape((string) $whatsAppBridgeInfo['qrDataUrl']) ?>"
+                                            alt="WhatsApp QR code"
+                                            class="img-fluid rounded border bg-white p-2"
+                                            style="max-width: 320px;"
+                                        >
+                                        <p class="small text-secondary mb-0 mt-2">Scan this QR with WhatsApp on your phone.</p>
+                                    </div>
+                                <?php elseif ($whatsAppBridgeInfo !== null && ($whatsAppBridgeInfo['connected'] ?? false) === true): ?>
+                                    <p class="small text-success mb-0">WhatsApp Web is already connected. No QR is needed right now.</p>
+                                <?php elseif ($whatsAppBridgeInfo !== null): ?>
+                                    <p class="small text-secondary mb-0">No QR is available at the moment. If the bridge was just started, click Check status again in a few seconds.</p>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+
                         <?php if (!$whatsAppBridgeReady): ?>
-                            <p class="small text-danger mb-0 mt-3">Save the bridge URL and token first, then open the QR dashboard to connect WhatsApp Web.</p>
+                            <p class="small text-danger mb-0 mt-3">Save the bridge URL and token first, then start the bridge service so this page can load the QR.</p>
                         <?php elseif ($whatsAppAutoMessageTemplate === ''): ?>
                             <p class="small text-danger mb-0 mt-3">Set an auto message template if you want Telegram adds to send a WhatsApp message automatically.</p>
                         <?php endif; ?>
