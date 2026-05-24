@@ -402,7 +402,7 @@ function contact_trace_add_lead(PDO $pdo, array $input): int
     $ownerName = trim((string) ($input['owner_name'] ?? ''));
     $telegramHandle = contact_trace_normalize_telegram_handle((string) ($input['telegram_handle'] ?? ''));
     $phoneDisplay = trim((string) ($input['phone_display'] ?? ''));
-    $phoneNormalized = contact_trace_normalize_phone($phoneDisplay);
+    $phoneNormalized = contact_trace_normalize_whatsapp_phone($phoneDisplay);
     $adUrl = trim((string) ($input['ad_url'] ?? ''));
     $serviceOffer = trim((string) ($input['service_offer'] ?? ''));
     $latestReply = trim((string) ($input['latest_reply'] ?? ''));
@@ -596,7 +596,85 @@ function contact_trace_find_latest_lead_by_phone(PDO $pdo, string $phone): ?arra
     $statement->execute($params);
     $lead = $statement->fetch();
 
-    return is_array($lead) ? $lead : null;
+    if (is_array($lead)) {
+        return $lead;
+    }
+
+    return contact_trace_find_latest_lead_by_phone_fallback($pdo, $candidates);
+}
+
+function contact_trace_find_latest_lead_by_phone_fallback(PDO $pdo, array $phoneCandidates): ?array
+{
+    $statement = $pdo->query(
+        'SELECT *
+         FROM leads
+         ORDER BY updated_at DESC, id DESC'
+    );
+
+    if ($statement === false) {
+        return null;
+    }
+
+    $bestLead = null;
+    $bestScore = 0;
+
+    foreach ($statement->fetchAll() as $lead) {
+        if (!is_array($lead)) {
+            continue;
+        }
+
+        $score = contact_trace_score_lead_phone_match($lead, $phoneCandidates);
+
+        if ($score > $bestScore) {
+            $bestLead = $lead;
+            $bestScore = $score;
+        }
+    }
+
+    return $bestScore >= 80 && is_array($bestLead) ? $bestLead : null;
+}
+
+function contact_trace_score_lead_phone_match(array $lead, array $incomingCandidates): int
+{
+    $leadValues = [
+        (string) ($lead['phone_normalized'] ?? ''),
+        (string) ($lead['phone_display'] ?? ''),
+    ];
+    $leadCandidates = [];
+
+    foreach ($leadValues as $leadValue) {
+        foreach (contact_trace_phone_lookup_candidates($leadValue) as $candidate) {
+            $leadCandidates[] = $candidate;
+        }
+    }
+
+    $leadCandidates = array_values(array_unique(array_filter($leadCandidates, static fn (string $value): bool => $value !== '')));
+    $bestScore = 0;
+
+    foreach ($incomingCandidates as $incomingCandidate) {
+        foreach ($leadCandidates as $leadCandidate) {
+            if ($incomingCandidate === $leadCandidate) {
+                return 100;
+            }
+
+            $incomingLength = strlen($incomingCandidate);
+            $leadLength = strlen($leadCandidate);
+
+            if ($incomingLength >= 8 && $leadLength >= 8) {
+                if (str_ends_with($incomingCandidate, $leadCandidate) || str_ends_with($leadCandidate, $incomingCandidate)) {
+                    $bestScore = max($bestScore, 90);
+                }
+
+                $commonLength = min($incomingLength, $leadLength, 8);
+
+                if ($commonLength >= 7 && substr($incomingCandidate, -$commonLength) === substr($leadCandidate, -$commonLength)) {
+                    $bestScore = max($bestScore, 80 + $commonLength - 7);
+                }
+            }
+        }
+    }
+
+    return $bestScore;
 }
 
 function contact_trace_delete_lead(PDO $pdo, int $id): bool
@@ -623,7 +701,7 @@ function contact_trace_process_whatsapp_inbound_message(PDO $pdo, array $input):
     $lead = contact_trace_find_latest_lead_by_phone($pdo, $phone);
 
     if ($lead === null) {
-        throw new RuntimeException('No matching lead found for WhatsApp phone number.');
+        throw new RuntimeException('No matching lead found for WhatsApp phone number: ' . implode(', ', contact_trace_phone_lookup_candidates($phone)));
     }
 
     $updatedLead = contact_trace_update_lead($pdo, (int) $lead['id'], [
