@@ -448,7 +448,7 @@ if ($isAuthenticated && $whatsAppBridgeReady) {
                         <div class="d-flex flex-column flex-lg-row justify-content-lg-between gap-3 align-items-lg-start mb-3">
                             <div>
                                 <h2 class="h5 mb-1">WhatsApp bridge</h2>
-                                <p class="text-secondary small mb-0">Configure the local service that keeps a WhatsApp Web session alive. The QR and live connection status are shown below on this page.</p>
+                                <p class="text-secondary small mb-0">Configure the local service that keeps a WhatsApp Web session alive. It sends outbound WhatsApp messages and syncs inbound replies back into Contact Trace.</p>
                             </div>
                             <div class="small text-secondary">
                                 <div>Bridge URL: <?= escape($whatsAppBridgeUrl !== '' ? $whatsAppBridgeUrl : 'missing') ?></div>
@@ -467,7 +467,7 @@ if ($isAuthenticated && $whatsAppBridgeReady) {
                                     value="<?= escape($whatsAppBridgeUrl) ?>"
                                     placeholder="http://127.0.0.1:3001"
                                 >
-                                <div class="form-text">This local Node.js service serves the QR page and sends messages for WhatsApp Web.</div>
+                                <div class="form-text">This local Node.js service serves the QR page, sends messages for WhatsApp Web, and forwards inbound replies back to Contact Trace.</div>
                             </div>
                             <div class="col-12 col-lg-6">
                                 <label for="whatsapp_bridge_token" class="form-label">Bridge token</label>

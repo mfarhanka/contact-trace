@@ -1,4 +1,6 @@
 const path = require('path');
+const http = require('http');
+const https = require('https');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -10,6 +12,7 @@ const app = express();
 const host = (process.env.WHATSAPP_BRIDGE_HOST || '127.0.0.1').trim() || '127.0.0.1';
 const port = Number.parseInt(process.env.WHATSAPP_BRIDGE_PORT || '3001', 10) || 3001;
 const bridgeToken = (process.env.WHATSAPP_BRIDGE_TOKEN || process.env.BRIDGE_TOKEN || '').trim();
+const inboundCallbackUrl = (process.env.WHATSAPP_INBOUND_URL || 'http://127.0.0.1/contact-trace/whatsapp-inbound.php').trim();
 
 const state = {
   state: 'starting',
@@ -62,6 +65,115 @@ function responseOk(result) {
 
 function responseError(error) {
   return { ok: false, error };
+}
+
+function requestJson(method, urlString, headers, payload) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlString);
+    const transport = url.protocol === 'https:' ? https : http;
+    const body = payload ? JSON.stringify(payload) : '';
+    const request = transport.request({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port,
+      path: `${url.pathname}${url.search}`,
+      method,
+      headers: {
+        Accept: 'application/json',
+        ...headers,
+        ...(body !== '' ? {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        } : {}),
+      },
+    }, (response) => {
+      let responseBody = '';
+
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        responseBody += chunk;
+      });
+      response.on('end', () => {
+        const statusCode = response.statusCode || 500;
+
+        if (statusCode < 200 || statusCode >= 300) {
+          reject(new Error(responseBody || `Request failed with status ${statusCode}.`));
+          return;
+        }
+
+        if (responseBody.trim() === '') {
+          resolve({ ok: true, result: {} });
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(responseBody));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    });
+
+    request.on('error', reject);
+
+    if (body !== '') {
+      request.write(body);
+    }
+
+    request.end();
+  });
+}
+
+function messageText(message) {
+  const body = String((message && message.body) || '').trim();
+
+  if (body !== '') {
+    return body;
+  }
+
+  if (message && message.hasMedia) {
+    return `[${String(message.type || 'media')}]`;
+  }
+
+  return '';
+}
+
+async function forwardIncomingMessage(message) {
+  if (bridgeToken === '') {
+    return;
+  }
+
+  const from = String((message && message.from) || '').trim();
+
+  if (message.fromMe || from === '' || from === 'status@broadcast' || from.endsWith('@g.us')) {
+    return;
+  }
+
+  const phone = normalizePhone(from.split('@')[0] || '');
+  const text = messageText(message);
+
+  if (phone === '' || text === '') {
+    return;
+  }
+
+  try {
+    const payload = await requestJson('POST', inboundCallbackUrl, {
+      'X-Bridge-Token': bridgeToken,
+    }, {
+      phone,
+      text,
+      messageId: message && message.id ? message.id._serialized || '' : '',
+      receivedAt: new Date().toISOString(),
+    });
+
+    if (!payload || payload.ok !== true) {
+      throw new Error((payload && payload.error) || 'Inbound callback failed.');
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    setState({ lastError: `Inbound sync failed: ${errorMessage}` });
+    console.error('WhatsApp inbound sync failed:', errorMessage);
+  }
 }
 
 function requestToken(req) {
@@ -203,7 +315,7 @@ function renderDashboard() {
   <main>
     <section class="panel">
       <h1>WhatsApp QR Dashboard</h1>
-      <p>Keep this bridge running locally. Scan the QR code with WhatsApp on your phone, then Contact Trace can send the first message automatically after a Telegram lead is added.</p>
+      <p>Keep this bridge running locally. Scan the QR code with WhatsApp on your phone, then Contact Trace can send outbound WhatsApp messages and sync inbound replies back into the lead list automatically.</p>
       <div class="grid">
         <div class="card">
           <label for="token">Bridge token</label>
@@ -379,6 +491,10 @@ client.on('loading_screen', (percent, message) => {
     state: `loading ${percent}%`,
     lastError: String(message || ''),
   });
+});
+
+client.on('message', (message) => {
+  void forwardIncomingMessage(message);
 });
 
 app.post('/api/send', requireBridgeToken, async (req, res) => {

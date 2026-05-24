@@ -47,12 +47,13 @@ Use `-` or `/skip` for any optional empty field in `/add`.
 
 ## WhatsApp bridge
 
-The app can also send a WhatsApp message automatically right after a lead is added through Telegram. This uses a small local Node.js bridge that stays logged in to WhatsApp Web.
+The app can send WhatsApp messages automatically right after a lead is added through Telegram, and it can also detect inbound WhatsApp replies, save them into the lead, switch the lead status to `replied`, and notify Telegram. This uses a small local Node.js bridge that stays logged in to WhatsApp Web.
 
 1. Set these values in `.env` or save them from `admin.php`:
 	- `WHATSAPP_BRIDGE_URL`: default `http://127.0.0.1:3001`
 	- `WHATSAPP_BRIDGE_TOKEN`: any long random secret shared between PHP and the bridge
 	- `WHATSAPP_AUTO_MESSAGE_TEMPLATE`: one or more messages sent after Telegram saves a lead
+	- `WHATSAPP_INBOUND_URL`: optional override for the local callback endpoint. Defaults to `http://127.0.0.1/contact-trace/whatsapp-inbound.php`
 2. Install and start the bridge:
 	- `cd whatsapp-bridge`
 	- `npm install`
@@ -60,6 +61,7 @@ The app can also send a WhatsApp message automatically right after a lead is add
 3. Open `admin.php`, save the bridge URL, token, and auto message template(s). Separate each message with a line that only contains `---`.
 4. Click `Open QR dashboard` in the admin page and scan the QR code using WhatsApp on your phone.
 5. Use `/add` in Telegram. After the lead is saved, the bot will attempt to send each WhatsApp template to that lead automatically, waiting 5 seconds between messages.
+6. Keep the bridge running. When someone replies in WhatsApp, the bridge forwards the message to Contact Trace, which updates the lead `latest_reply`, changes the status to `replied`, and sends a Telegram alert to the configured chat IDs.
 
 Template placeholders:
 

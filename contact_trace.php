@@ -548,12 +548,94 @@ function contact_trace_find_lead(PDO $pdo, int $id): ?array
     return is_array($lead) ? $lead : null;
 }
 
+function contact_trace_phone_lookup_candidates(string $phone): array
+{
+    $candidates = [];
+    $normalizedPhone = contact_trace_normalize_phone($phone);
+    $whatsappPhone = contact_trace_normalize_whatsapp_phone($phone);
+
+    foreach ([$normalizedPhone, $whatsappPhone] as $value) {
+        if ($value !== '') {
+            $candidates[] = $value;
+        }
+    }
+
+    foreach ([$normalizedPhone, $whatsappPhone] as $value) {
+        if (str_starts_with($value, '60')) {
+            $candidates[] = '0' . substr($value, 2);
+        }
+    }
+
+    return array_values(array_unique(array_filter($candidates, static fn (string $value): bool => $value !== '')));
+}
+
+function contact_trace_find_latest_lead_by_phone(PDO $pdo, string $phone): ?array
+{
+    $candidates = contact_trace_phone_lookup_candidates($phone);
+
+    if ($candidates === []) {
+        return null;
+    }
+
+    $placeholders = [];
+    $params = [];
+
+    foreach ($candidates as $index => $candidate) {
+        $placeholder = ':phone_' . $index;
+        $placeholders[] = $placeholder;
+        $params[$placeholder] = $candidate;
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT *
+         FROM leads
+         WHERE phone_normalized IN (' . implode(', ', $placeholders) . ')
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1'
+    );
+    $statement->execute($params);
+    $lead = $statement->fetch();
+
+    return is_array($lead) ? $lead : null;
+}
+
 function contact_trace_delete_lead(PDO $pdo, int $id): bool
 {
     $statement = $pdo->prepare('DELETE FROM leads WHERE id = :id');
     $statement->execute([':id' => $id]);
 
     return $statement->rowCount() > 0;
+}
+
+function contact_trace_process_whatsapp_inbound_message(PDO $pdo, array $input): array
+{
+    $phone = trim((string) ($input['phone'] ?? ''));
+    $text = trim((string) ($input['text'] ?? ''));
+
+    if ($phone === '') {
+        throw new InvalidArgumentException('WhatsApp phone number is required.');
+    }
+
+    if ($text === '') {
+        throw new InvalidArgumentException('WhatsApp message text is required.');
+    }
+
+    $lead = contact_trace_find_latest_lead_by_phone($pdo, $phone);
+
+    if ($lead === null) {
+        throw new RuntimeException('No matching lead found for WhatsApp phone number.');
+    }
+
+    $updatedLead = contact_trace_update_lead($pdo, (int) $lead['id'], [
+        'status' => 'replied',
+        'latest_reply' => $text,
+        'notes' => (string) ($lead['notes'] ?? ''),
+    ]);
+
+    return [
+        'lead' => $updatedLead,
+        'alert' => contact_trace_send_lead_update_telegram_alert($lead, $updatedLead),
+    ];
 }
 
 function contact_trace_env(string $name): string
