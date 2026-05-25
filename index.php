@@ -266,15 +266,13 @@ $leads = contact_trace_search_leads($pdo, $searchTerm);
                                                             <a href="<?= escape($whatsappLink) ?>" target="_blank" rel="noreferrer">WhatsApp</a>
                                                         </div>
                                                     <?php endif; ?>
-                                                    <?php if ($lead['telegram_handle'] !== ''): ?>
+                                                    <?php $recordTelegramUsername = $lead['telegram_handle'] !== '' ? (string) $lead['telegram_handle'] : (str_starts_with((string) ($lead['telegram_user_id'] ?? ''), '@') ? (string) $lead['telegram_user_id'] : ''); ?>
+                                                    <?php if ($recordTelegramUsername !== ''): ?>
                                                         <div class="small">
-                                                            <a href="<?= escape(telegram_link($lead['telegram_handle'])) ?>" target="_blank" rel="noreferrer">
-                                                                <?= escape($lead['telegram_handle']) ?>
+                                                            <a href="<?= escape(telegram_link($recordTelegramUsername)) ?>" target="_blank" rel="noreferrer">
+                                                                <?= escape($recordTelegramUsername) ?>
                                                             </a>
                                                         </div>
-                                                    <?php endif; ?>
-                                                    <?php if ($lead['telegram_user_id'] !== ''): ?>
-                                                        <div class="small text-secondary">Telegram ID: <?= escape($lead['telegram_user_id']) ?></div>
                                                     <?php endif; ?>
                                                     <div class="text-secondary small"><?= escape($lead['service_offer']) !== '' ? escape($lead['service_offer']) : 'No service set' ?></div>
                                                 </td>

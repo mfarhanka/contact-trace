@@ -60,19 +60,19 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
     }
 
     $chatId = null;
-    $telegramUserId = null;
+    $telegramActor = null;
     $text = '';
     $callbackQueryId = '';
 
     if (is_array($callbackQuery)) {
         $callbackMessage = $callbackQuery['message'] ?? null;
         $chatId = is_array($callbackMessage) ? ($callbackMessage['chat']['id'] ?? null) : null;
-        $telegramUserId = $callbackQuery['from']['id'] ?? null;
+        $telegramActor = contact_trace_telegram_actor_value($callbackQuery['from'] ?? null);
         $text = trim((string) ($callbackQuery['data'] ?? ''));
         $callbackQueryId = trim((string) ($callbackQuery['id'] ?? ''));
     } elseif (is_array($message)) {
         $chatId = $message['chat']['id'] ?? null;
-        $telegramUserId = $message['from']['id'] ?? null;
+        $telegramActor = contact_trace_telegram_actor_value($message['from'] ?? null);
         $text = trim((string) ($message['text'] ?? ''));
     }
 
@@ -97,7 +97,7 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
     try {
         $pdo = contact_trace_get_pdo();
         $draftBefore = contact_trace_find_telegram_add_draft($pdo, $chatIdString);
-        $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text, $telegramUserId);
+        $reply = contact_trace_handle_telegram_command($pdo, $chatIdString, $text, $telegramActor);
         $draft = contact_trace_find_telegram_add_draft($pdo, $chatIdString);
     } catch (Throwable $exception) {
         $reply = 'Error: ' . $exception->getMessage();
@@ -114,6 +114,23 @@ function contact_trace_process_telegram_update(array $update, ?string $botToken 
         $reply,
         contact_trace_telegram_reply_markup($text, $reply, $draftBefore, $draft)
     );
+}
+
+function contact_trace_telegram_actor_value(mixed $from): ?string
+{
+    if (!is_array($from)) {
+        return null;
+    }
+
+    $username = contact_trace_normalize_telegram_handle((string) ($from['username'] ?? ''));
+
+    if ($username !== '') {
+        return $username;
+    }
+
+    $id = $from['id'] ?? null;
+
+    return is_int($id) || is_string($id) ? (string) $id : null;
 }
 
 function contact_trace_telegram_reply_markup(string $text, string $reply, ?array $draftBefore, ?array $draftAfter): array
